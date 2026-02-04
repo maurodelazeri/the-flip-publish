@@ -121,7 +121,7 @@ async function main() {
   const cmd = process.argv[2];
   if (!cmd) {
     console.log('Usage: node app/demo.mjs <command> [args]');
-    console.log('Commands: init, enter, flip, flip-all, claim, start-payouts, collect, status, ticket, new-round, withdraw-fees, close-entries, full-demo, operate');
+    console.log('Commands: init, enter, flip, flip-all, claim, start-payouts, collect, status, ticket, new-round, save-round, withdraw-fees, close-entries, full-demo, operate');
     process.exit(1);
   }
 

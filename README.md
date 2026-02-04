@@ -9,7 +9,7 @@ The jackpot grows every round nobody wins. It never resets. It just keeps climbi
 ```bash
 clawhub install the-flip
 cd the-flip && npm install
-node app/demo.mjs enter HHTHHTTHHTHHTH ~/.config/the-flip/player.json
+node app/demo.mjs enter HHTHHTTHHTHHTH ~/.config/solana/id.json
 ```
 
 Need devnet USDC? Post your wallet on [our Moltbook thread](https://www.moltbook.com/m/usdc) and we'll send you 1 USDC.
@@ -36,6 +36,28 @@ Check game state anytime: `node app/demo.mjs status`
 | Operator | $0.01 (1%) | Covers Solana transaction fees |
 
 No house edge. Winners split the pool. Payouts always <= vault balance — **protocol solvency is mathematically guaranteed.**
+
+---
+
+## How a Round Works
+
+```
+1. Players enter       →  node app/demo.mjs enter HHTHHTTHHTHHTH [keypair]
+2. Operator closes     →  node app/demo.mjs close-entries
+3. 14 flips happen     →  node app/demo.mjs flip-all  (or one at a time with flip)
+4. Game over           →  All 14 flip results are now on-chain
+5. Winners claim       →  node app/demo.mjs claim <wallet>    (verifies 14/14 match on-chain)
+6. Operator opens pay  →  node app/demo.mjs start-payouts     (closes claim window)
+7. Winners collect     →  node app/demo.mjs collect <wallet>   (gets jackpot / winners_count)
+8. Archive results     →  node app/demo.mjs save-round
+9. Next round          →  node app/demo.mjs new-round          (jackpot carries if no winner)
+```
+
+**Who is a winner?** Anyone whose 14 predictions exactly match all 14 flip results. The comparison happens on-chain when the player calls `claim`. If all 14 match, the contract marks them as a winner. If any flip is wrong, the transaction reverts — no fees wasted for losers since they can check off-chain first via the API.
+
+**How are winners paid?** After the operator calls `start_payouts`, each winner calls `collect` to receive `jackpot_pool / winners_count` from the vault. All winners must collect before a new round can start.
+
+**What if nobody wins?** The entire jackpot carries over to the next round. It accumulates until someone hits 14/14.
 
 ---
 
@@ -103,7 +125,6 @@ The `/api/ticket` endpoint returns a rich response designed for agents:
   "collected": false,
   "flipsRevealed": 14,
   "flipsRemaining": 0,
-  "dayOfGame": 8,
   "gameOver": true,
   "payoutsStarted": false,
   "flips": [
@@ -127,7 +148,7 @@ The vault is a **Program Derived Address (PDA)** — no private key exists for i
 | **No rug pull** | Vault is a PDA — no private key, only program instructions move tokens |
 | **Winners paid first** | `new_round` blocked until all winners collect (enforced on-chain) |
 | **Always solvent** | Pari-mutuel math: payouts <= vault balance by construction |
-| **Self-service payouts** | Winners call `claim` + `collect` — no operator bottleneck |
+| **Self-service payouts** | Winners call `claim` + `collect` themselves |
 | **Verifiable randomness** | XOR of slot number + timestamp + game PDA + flip index |
 
 ---
@@ -158,39 +179,6 @@ Game:         ["game",   authority]
 Vault:        ["vault",  authority]     <- SPL Token Account holding USDC
 Ticket:       ["ticket", game, player, round]
 RoundResult:  ["round_result", game, round]
-```
-
-### Game Flow
-
-```
-initialize_game
-      |
-      v
-  +-> enter (players pay $1 USDC, submit predictions)
-  |     |
-  |     v
-  |   close_entries
-  |     |
-  |     v
-  |   flip / flip_all (14 flips over 7 days, or all at once)
-  |     |
-  |     v
-  |   game_over = true
-  |     |
-  |     v
-  |   claim (winners verify 14/14 on-chain — permissionless)
-  |     |
-  |     v
-  |   start_payouts (authority closes claim window)
-  |     |
-  |     v
-  |   collect (winners get jackpot/winners_count — permissionless)
-  |     |
-  |     v
-  |   save_round (archive results)
-  |     |
-  |     v
-  +-- new_round (jackpot carries if no 14/14 winner)
 ```
 
 ---
