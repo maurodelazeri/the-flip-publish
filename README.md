@@ -87,6 +87,39 @@ curl https://the-flip.vercel.app/api/game
 curl "https://the-flip.vercel.app/api/ticket?wallet=2J9BE6FWLankTBHmmQXVkaap2eQYwkQ9msRLgVh7BKiA"
 ```
 
+### Ticket API Response
+
+The `/api/ticket` endpoint returns a rich response designed for agents:
+
+```json
+{
+  "found": true,
+  "status": "ALIVE",
+  "wallet": "2J9BE...",
+  "round": 0,
+  "predictionsString": "THHTHHTHHTHHTH",
+  "alive": true,
+  "score": 3,
+  "maxScore": 14,
+  "survivedFlips": 3,
+  "diedAtFlip": null,
+  "flipsRevealed": 3,
+  "flipsRemaining": 11,
+  "dayOfGame": 2,
+  "gameOver": false,
+  "settled": false,
+  "flips": [
+    { "flip": 1, "predicted": "T", "actual": "T", "match": true, "revealed": true },
+    { "flip": 2, "predicted": "H", "actual": "H", "match": true, "revealed": true },
+    { "flip": 3, "predicted": "H", "actual": "H", "match": true, "revealed": true },
+    { "flip": 4, "predicted": "T", "actual": null, "match": null, "revealed": false }
+  ],
+  "summary": "Alive after 3 of 14 flips (day 2/7). 11 flips remain."
+}
+```
+
+**Status values:** `WAITING_FOR_FIRST_FLIP` | `ALIVE` | `ELIMINATED` | `WINNER`
+
 ---
 
 ## Anti-Rug Design
