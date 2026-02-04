@@ -1,27 +1,31 @@
 /**
- * THE FLIP — Demo & Agent Operations Script
+ * THE FLIP — $1 USDC. 20 Flips. Win $1M+.
  * 
- * Works with deployed program: 7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX
+ * Program: 7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX (Solana devnet)
  * 
- * Usage:
- *   node app/demo.mjs init                    Initialize game + vault
- *   node app/demo.mjs enter <HHTHTT...>       Enter with 20 H/T predictions
- *   node app/demo.mjs flip                    Execute one coin flip
- *   node app/demo.mjs flip-all                Execute all 20 flips in one tx
- *   node app/demo.mjs crank <player_pubkey>   Evaluate ticket vs flip results
- *   node app/demo.mjs settle <player_pubkey>  Pay winnings from vault
- *   node app/demo.mjs status                  Show game state
- *   node app/demo.mjs ticket <player_pubkey>  Show a player's ticket
- *   node app/demo.mjs new-round               Start new round (jackpot carries)
- *   node app/demo.mjs withdraw-fees [amount]  Withdraw operator fees
- *   node app/demo.mjs close-entries           Close entries manually
- *   node app/demo.mjs full-demo               Run complete demo cycle
+ * PLAYER COMMANDS:
+ *   node app/demo.mjs play <HHTHTT...>        ← START HERE. Enter the game.
+ *   node app/demo.mjs status                  Show game state + jackpot
+ *   node app/demo.mjs ticket <player_pubkey>  Check your ticket
+ * 
+ * OPERATOR COMMANDS (authority only):
+ *   node app/demo.mjs init                    Initialize game
+ *   node app/demo.mjs enter <HHTHTT...>       Raw enter (no pre-checks)
+ *   node app/demo.mjs flip / flip-all         Execute coin flips
+ *   node app/demo.mjs crank <pubkey>          Score a ticket
+ *   node app/demo.mjs settle <pubkey>         Pay winnings
+ *   node app/demo.mjs new-round               Start next round
+ *   node app/demo.mjs withdraw-fees           Withdraw operator fees
+ *   node app/demo.mjs full-demo               Complete demo cycle
  */
 
 import { Connection, Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
 import { 
   getAssociatedTokenAddress, 
-  TOKEN_PROGRAM_ID 
+  createAssociatedTokenAccountInstruction,
+  getAccount,
+  TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 import * as anchor from '@coral-xyz/anchor';
 import fs from 'fs';
@@ -92,9 +96,16 @@ function fmtUsdc(raw) {
 async function main() {
   const cmd = process.argv[2];
   if (!cmd) {
-    console.log('Usage: node app/demo.mjs <command> [args]');
-    console.log('Commands: init, enter, flip, flip-all, crank, settle, status, ticket, new-round, withdraw-fees, close-entries, full-demo');
-    process.exit(1);
+    console.log('🎰 THE FLIP — $1 USDC. 20 Flips. Win $1M+.');
+    console.log('');
+    console.log('  node app/demo.mjs play <HHTHTT...>   Enter the game (start here!)');
+    console.log('  node app/demo.mjs status              Check game state + jackpot');
+    console.log('  node app/demo.mjs ticket <pubkey>     Check your ticket');
+    console.log('');
+    console.log('Example: node app/demo.mjs play HHTHTTHHTHHHTTHHTHHT');
+    console.log('');
+    console.log('Need USDC? https://faucet.circle.com (Solana, Devnet)');
+    process.exit(0);
   }
 
   const connection = new Connection(DEVNET_URL, 'confirmed');
@@ -485,8 +496,145 @@ async function main() {
       break;
     }
 
+    case 'play': {
+      // === THE ONE-STOP COMMAND FOR PLAYERS ===
+      // Checks everything, creates what's missing, enters the game.
+      const preds = process.argv[3];
+      if (!preds || preds.length !== 20 || !/^[HhTt]+$/.test(preds)) {
+        console.log('🎰 THE FLIP — Play');
+        console.log('');
+        console.log('Usage: node app/demo.mjs play <20 H/T predictions>');
+        console.log('');
+        console.log('Example: node app/demo.mjs play HHTHTTHHTHHHTTHHTHHT');
+        console.log('');
+        console.log('Each character is your prediction for one coin flip:');
+        console.log('  H = Heads, T = Tails');
+        console.log('  Must be exactly 20 characters.');
+        console.log('');
+        console.log('Entry fee: 1 USDC (devnet)');
+        console.log('Get USDC: https://faucet.circle.com (select Solana, Devnet)');
+        process.exit(1);
+      }
+
+      const parsed = parsePredictions(preds);
+      console.log('🎰 THE FLIP — Entering Round...');
+      console.log('');
+
+      // Check 1: SOL balance
+      const solBalance = await connection.getBalance(wallet.publicKey);
+      console.log('Wallet:    ' + wallet.publicKey.toBase58());
+      console.log('SOL:       ' + (solBalance / 1e9).toFixed(4));
+      if (solBalance < 10_000_000) { // 0.01 SOL minimum
+        console.error('');
+        console.error('❌ Not enough SOL for transaction fees.');
+        console.error('   Get devnet SOL: solana airdrop 1 ' + wallet.publicKey.toBase58() + ' --url devnet');
+        process.exit(1);
+      }
+      console.log('           ✅ enough for fees');
+
+      // Check 2: USDC token account
+      const playerATA = await getAssociatedTokenAddress(USDC_MINT, wallet.publicKey);
+      let usdcBalance = 0;
+      try {
+        const ataInfo = await getAccount(connection, playerATA);
+        usdcBalance = Number(ataInfo.amount);
+        console.log('USDC ATA:  ' + playerATA.toBase58());
+        console.log('USDC:      ' + (usdcBalance / 1_000_000).toFixed(6));
+      } catch (e) {
+        // ATA doesn't exist — create it
+        console.log('USDC ATA:  not found — creating...');
+        try {
+          const createATAIx = createAssociatedTokenAccountInstruction(
+            wallet.publicKey, playerATA, wallet.publicKey, USDC_MINT
+          );
+          const tx = new anchor.web3.Transaction().add(createATAIx);
+          await provider.sendAndConfirm(tx);
+          console.log('           ✅ created ' + playerATA.toBase58());
+        } catch (ataErr) {
+          console.error('❌ Failed to create USDC token account: ' + ataErr.message?.slice(0, 80));
+          process.exit(1);
+        }
+        usdcBalance = 0;
+      }
+
+      if (usdcBalance < 1_000_000) {
+        console.error('');
+        console.error('❌ Not enough USDC. Need 1 USDC (you have ' + (usdcBalance / 1_000_000).toFixed(6) + ')');
+        console.error('');
+        console.error('Get devnet USDC:');
+        console.error('  1. Go to https://faucet.circle.com');
+        console.error('  2. Select: Solana, Devnet');
+        console.error('  3. Paste your address: ' + wallet.publicKey.toBase58());
+        console.error('  4. Click "Get Tokens"');
+        console.error('');
+        console.error('Then run this command again.');
+        process.exit(1);
+      }
+      console.log('           ✅ enough to play');
+
+      // Check 3: Game is accepting entries
+      const game = await program.account.game.fetch(gamePDA);
+      console.log('Round:     ' + game.round);
+      console.log('Jackpot:   ' + fmtUsdc(game.jackpotPool) + ' USDC');
+      if (!game.acceptingEntries) {
+        console.error('');
+        console.error('❌ Round ' + game.round + ' is not accepting entries. Wait for the next round.');
+        process.exit(1);
+      }
+      console.log('Status:    ✅ accepting entries');
+
+      // Check 4: Not already entered this round
+      const [ticketPDA] = getTicketPDA(gamePDA, wallet.publicKey, game.round);
+      try {
+        await program.account.ticket.fetch(ticketPDA);
+        console.error('');
+        console.error('❌ You already entered round ' + game.round + '! Wait for the next round.');
+        process.exit(1);
+      } catch (e) {
+        // Good — no ticket yet
+      }
+
+      // All checks passed — enter!
+      console.log('');
+      console.log('Predictions: ' + preds.toUpperCase());
+      console.log('Entering...');
+
+      try {
+        const tx = await program.methods.enter(parsed).accounts({
+          player: wallet.publicKey,
+          game: gamePDA,
+          ticket: ticketPDA,
+          playerTokenAccount: playerATA,
+          vault: vaultPDA,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        }).rpc();
+
+        console.log('');
+        console.log('🎉 Entry confirmed!');
+        console.log('TX: ' + tx);
+        console.log('Explorer: https://explorer.solana.com/tx/' + tx + '?cluster=devnet');
+        console.log('');
+        console.log('Your ticket is live. Flips happen every ~8 hours.');
+        console.log('Check results: node app/demo.mjs ticket ' + wallet.publicKey.toBase58());
+      } catch (e) {
+        console.error('');
+        console.error('❌ Entry failed: ' + (e.message?.slice(0, 120) || e));
+        process.exit(1);
+      }
+      break;
+    }
+
     default:
       console.error('Unknown command:', cmd);
+      console.log('');
+      console.log('Available commands:');
+      console.log('  play <HHTHTT...>    Enter the game (recommended for players)');
+      console.log('  status              Show game state');
+      console.log('  ticket <pubkey>     Show a player\'s ticket');
+      console.log('');
+      console.log('Operator commands:');
+      console.log('  init, flip, flip-all, crank, settle, new-round, withdraw-fees');
       process.exit(1);
   }
 }
