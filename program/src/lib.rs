@@ -348,6 +348,30 @@ pub mod the_flip {
         Ok(())
     }
 
+    /// Save round results before new_round wipes the state. Authority only.
+    /// Call after all tickets are settled, before new_round.
+    pub fn save_round(ctx: Context<SaveRound>) -> Result<()> {
+        let game = &ctx.accounts.game;
+        let result = &mut ctx.accounts.round_result;
+
+        require!(game.game_over, FlipError::GameNotOver);
+
+        result.game = game.key();
+        result.round = game.round;
+        result.flip_results = game.flip_results;
+        result.total_entries = game.total_entries;
+        result.jackpot_pool = game.jackpot_pool;
+        result.winners = game.tier_counts[5];
+        result.timestamp = Clock::get()?.unix_timestamp;
+        result.bump = ctx.bumps.round_result;
+
+        msg!(
+            "Round {} saved. Entries: {}, Winners: {}, Jackpot: {}",
+            game.round, game.total_entries, game.tier_counts[5], game.jackpot_pool
+        );
+        Ok(())
+    }
+
     /// Close entries manually (authority only).
     pub fn close_entries(ctx: Context<AuthorityOnly>) -> Result<()> {
         let game = &mut ctx.accounts.game;
@@ -564,6 +588,30 @@ pub struct AuthorityOnly<'info> {
 }
 
 #[derive(Accounts)]
+pub struct SaveRound<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        seeds = [b"game", authority.key().as_ref()],
+        bump = game.bump,
+        constraint = authority.key() == game.authority @ FlipError::Unauthorized,
+    )]
+    pub game: Account<'info, Game>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + RoundResult::INIT_SPACE,
+        seeds = [b"round_result", game.key().as_ref(), &[game.round]],
+        bump,
+    )]
+    pub round_result: Account<'info, RoundResult>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct CloseGameV1<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
@@ -613,6 +661,19 @@ pub struct Ticket {
     pub died_at_flip: u8,
     pub settled: bool,
     pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct RoundResult {
+    pub game: Pubkey,           // 32 — which game
+    pub round: u8,              // 1  — which round
+    pub flip_results: [u8; 20], // 20 — the coin flip outcomes
+    pub total_entries: u32,     // 4  — how many players entered
+    pub jackpot_pool: u64,      // 8  — jackpot at end of round (0 if winner paid out, carries if not)
+    pub winners: u32,           // 4  — number of 20/20 winners
+    pub timestamp: i64,         // 8  — when the round ended
+    pub bump: u8,               // 1  — PDA bump
 }
 
 // ─── Errors ─────────────────────────────────────────────────────────────────

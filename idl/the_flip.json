@@ -440,6 +440,59 @@
       "args": []
     },
     {
+      "name": "save_round",
+      "docs": [
+        "Save round results before new_round wipes the state. Authority only.",
+        "Call after all tickets are settled, before new_round."
+      ],
+      "discriminator": [
+        92,
+        206,
+        30,
+        43,
+        231,
+        69,
+        200,
+        42
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round_result",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "settle",
       "docs": [
         "Settle a ticket: pay winnings from the vault. Permissionless."
@@ -578,6 +631,19 @@
         100,
         121,
         18
+      ]
+    },
+    {
+      "name": "RoundResult",
+      "discriminator": [
+        216,
+        11,
+        21,
+        196,
+        213,
+        240,
+        117,
+        235
       ]
     },
     {
@@ -759,6 +825,51 @@
           },
           {
             "name": "round",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundResult",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "game",
+            "type": "pubkey"
+          },
+          {
+            "name": "round",
+            "type": "u8"
+          },
+          {
+            "name": "flip_results",
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "total_entries",
+            "type": "u32"
+          },
+          {
+            "name": "jackpot_pool",
+            "type": "u64"
+          },
+          {
+            "name": "winners",
+            "type": "u32"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
             "type": "u8"
           }
         ]

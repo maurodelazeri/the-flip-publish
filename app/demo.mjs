@@ -1,35 +1,30 @@
 /**
- * THE FLIP — $1 USDC. 20 Flips. Win $1M+.
+ * THE FLIP — Demo & Agent Operations Script
  * 
- * Program: 7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX (Solana devnet)
+ * Works with deployed program: 7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX
  * 
- * PLAYER COMMANDS:
- *   node app/demo.mjs play <HHTHTT...>        ← START HERE. Enter the game.
- *   node app/demo.mjs status                  Show game state + jackpot
- *   node app/demo.mjs ticket <player_pubkey>  Check your ticket
- * 
- * OPERATOR COMMANDS (authority only):
- *   node app/demo.mjs init                    Initialize game
- *   node app/demo.mjs enter <HHTHTT...>       Raw enter (no pre-checks)
- *   node app/demo.mjs flip / flip-all         Execute coin flips
- *   node app/demo.mjs crank <pubkey>          Score a ticket
- *   node app/demo.mjs settle <pubkey>         Pay winnings
- *   node app/demo.mjs new-round               Start next round
- *   node app/demo.mjs withdraw-fees           Withdraw operator fees
+ * Usage:
+ *   node app/demo.mjs init                    Initialize game + vault
+ *   node app/demo.mjs enter <HHTHTT...>       Enter with 20 H/T predictions
+ *   node app/demo.mjs flip                    Execute one coin flip
+ *   node app/demo.mjs flip-all                Execute all 20 flips in one tx
+ *   node app/demo.mjs crank <player_pubkey>   Evaluate ticket vs flip results
+ *   node app/demo.mjs settle <player_pubkey>  Pay winnings from vault
+ *   node app/demo.mjs status                  Show game state
+ *   node app/demo.mjs ticket <player_pubkey>  Show a player's ticket
+ *   node app/demo.mjs new-round               Start new round (jackpot carries)
+ *   node app/demo.mjs withdraw-fees [amount]  Withdraw operator fees
  *   node app/demo.mjs close-entries           Close entries manually
- *   node app/demo.mjs full-demo               Complete demo cycle
- *   node app/demo.mjs crank-all               Crank all tickets in current round
- *   node app/demo.mjs settle-all              Settle all tickets in current round
- *   node app/demo.mjs operate                 Full round: close→flip→crank-all→settle-all→new-round
+ *   node app/demo.mjs full-demo               Run complete demo cycle
+ *   node app/demo.mjs crank-all               Crank all unsettled tickets in current round
+ *   node app/demo.mjs settle-all              Settle all cranked tickets in current round
+ *   node app/demo.mjs operate                 Full round operation: close→flip→crank-all→settle-all→new-round
  */
 
 import { Connection, Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
 import { 
   getAssociatedTokenAddress, 
-  createAssociatedTokenAccountInstruction,
-  getAccount,
-  TOKEN_PROGRAM_ID,
-  ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_PROGRAM_ID 
 } from '@solana/spl-token';
 import * as anchor from '@coral-xyz/anchor';
 import fs from 'fs';
@@ -39,14 +34,10 @@ import path from 'path';
 const DEVNET_URL = 'https://api.devnet.solana.com';
 const USDC_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
 const PROGRAM_ID = new PublicKey('7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX');
-const AUTHORITY = new PublicKey('89FeAXomb6QvvQ5CQ1cjouRAP3EDu3ZyrV13Xt2HNbLa');
 const TOTAL_FLIPS = 20;
 
 // Load IDL
-// Check multiple IDL locations: repo idl/ dir, or anchor build output
-const IDL_PATH = fs.existsSync(path.join(import.meta.dirname, '..', 'idl', 'the_flip.json'))
-  ? path.join(import.meta.dirname, '..', 'idl', 'the_flip.json')
-  : path.join(import.meta.dirname, '..', 'target', 'idl', 'the_flip.json');
+const IDL_PATH = path.join(import.meta.dirname, '..', 'target', 'idl', 'the_flip.json');
 
 // Load wallet
 function loadWallet(keyPath) {
@@ -65,6 +56,13 @@ function getGamePDA(authority) {
 function getVaultPDA(authority) {
   return PublicKey.findProgramAddressSync(
     [Buffer.from('vault'), authority.toBuffer()], PROGRAM_ID
+  );
+}
+
+function getRoundResultPDA(game, round) {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from('round_result'), game.toBuffer(), Buffer.from([round])],
+    PROGRAM_ID
   );
 }
 
@@ -92,13 +90,15 @@ function parsePredictions(str) {
 function flipToStr(r) { return r === 1 ? 'H' : r === 2 ? 'T' : '?'; }
 
 // Find all unsettled tickets for a given round via raw account scan
+// (Anchor's .all() chokes on old tickets with invalid bool values)
 async function findRoundTickets(connection, round) {
   const raw = await connection.getProgramAccounts(PROGRAM_ID, {
-    filters: [{ dataSize: 99 }]
+    filters: [{ dataSize: 99 }]  // Ticket accounts are exactly 99 bytes
   });
   const tickets = [];
   for (const r of raw) {
     const data = r.account.data;
+    // Layout: discriminator(8) + game(32) + player(32) + round(1) + predictions(20) + alive(1) + score(1) + lastCranked(1) + diedAt(1) + settled(1) + bump(1)
     const ticketRound = data[72];
     const settled = data[97];
     if (ticketRound === round && settled === 0) {
@@ -121,16 +121,9 @@ function fmtUsdc(raw) {
 async function main() {
   const cmd = process.argv[2];
   if (!cmd) {
-    console.log('🎰 THE FLIP — $1 USDC. 20 Flips. Win $1M+.');
-    console.log('');
-    console.log('  node app/demo.mjs play <HHTHTT...>   Enter the game (start here!)');
-    console.log('  node app/demo.mjs status              Check game state + jackpot');
-    console.log('  node app/demo.mjs ticket <pubkey>     Check your ticket');
-    console.log('');
-    console.log('Example: node app/demo.mjs play HHTHTTHHTHHHTTHHTHHT');
-    console.log('');
-    console.log('Need USDC? https://faucet.circle.com (Solana, Devnet)');
-    process.exit(0);
+    console.log('Usage: node app/demo.mjs <command> [args]');
+    console.log('Commands: init, enter, flip, flip-all, crank, settle, status, ticket, new-round, withdraw-fees, close-entries, full-demo');
+    process.exit(1);
   }
 
   const connection = new Connection(DEVNET_URL, 'confirmed');
@@ -150,10 +143,8 @@ async function main() {
   const idl = JSON.parse(fs.readFileSync(IDL_PATH, 'utf8'));
   const program = new anchor.Program(idl, provider);
 
-  // Game PDA is always derived from the AUTHORITY, not the current wallet.
-  // This lets any player use their own wallet to interact with the same game.
-  const [gamePDA] = getGamePDA(AUTHORITY);
-  const [vaultPDA] = getVaultPDA(AUTHORITY);
+  const [gamePDA] = getGamePDA(wallet.publicKey);
+  const [vaultPDA] = getVaultPDA(wallet.publicKey);
 
   switch (cmd) {
     case 'init': {
@@ -521,147 +512,59 @@ async function main() {
       break;
     }
 
-    case 'play': {
-      // === THE ONE-STOP COMMAND FOR PLAYERS ===
-      // Checks everything, creates what's missing, enters the game.
-      const preds = process.argv[3];
-      if (!preds || preds.length !== 20 || !/^[HhTt]+$/.test(preds)) {
-        console.log('🎰 THE FLIP — Play');
-        console.log('');
-        console.log('Usage: node app/demo.mjs play <20 H/T predictions>');
-        console.log('');
-        console.log('Example: node app/demo.mjs play HHTHTTHHTHHHTTHHTHHT');
-        console.log('');
-        console.log('Each character is your prediction for one coin flip:');
-        console.log('  H = Heads, T = Tails');
-        console.log('  Must be exactly 20 characters.');
-        console.log('');
-        console.log('Entry fee: 1 USDC (devnet)');
-        console.log('Get USDC: https://faucet.circle.com (select Solana, Devnet)');
-        process.exit(1);
-      }
-
-      const parsed = parsePredictions(preds);
-      console.log('🎰 THE FLIP — Entering Round...');
-      console.log('');
-
-      // Check 1: SOL balance
-      const solBalance = await connection.getBalance(wallet.publicKey);
-      console.log('Wallet:    ' + wallet.publicKey.toBase58());
-      console.log('SOL:       ' + (solBalance / 1e9).toFixed(4));
-      if (solBalance < 10_000_000) { // 0.01 SOL minimum
-        console.error('');
-        console.error('❌ Not enough SOL for transaction fees.');
-        console.error('   Get devnet SOL: solana airdrop 1 ' + wallet.publicKey.toBase58() + ' --url devnet');
-        process.exit(1);
-      }
-      console.log('           ✅ enough for fees');
-
-      // Check 2: USDC token account
-      const playerATA = await getAssociatedTokenAddress(USDC_MINT, wallet.publicKey);
-      let usdcBalance = 0;
-      try {
-        const ataInfo = await getAccount(connection, playerATA);
-        usdcBalance = Number(ataInfo.amount);
-        console.log('USDC ATA:  ' + playerATA.toBase58());
-        console.log('USDC:      ' + (usdcBalance / 1_000_000).toFixed(6));
-      } catch (e) {
-        // ATA doesn't exist — create it
-        console.log('USDC ATA:  not found — creating...');
-        try {
-          const createATAIx = createAssociatedTokenAccountInstruction(
-            wallet.publicKey, playerATA, wallet.publicKey, USDC_MINT
-          );
-          const tx = new anchor.web3.Transaction().add(createATAIx);
-          await provider.sendAndConfirm(tx);
-          console.log('           ✅ created ' + playerATA.toBase58());
-        } catch (ataErr) {
-          console.error('❌ Failed to create USDC token account: ' + ataErr.message?.slice(0, 80));
-          process.exit(1);
-        }
-        usdcBalance = 0;
-      }
-
-      if (usdcBalance < 1_000_000) {
-        console.error('');
-        console.error('❌ Not enough USDC. Need 1 USDC (you have ' + (usdcBalance / 1_000_000).toFixed(6) + ')');
-        console.error('');
-        console.error('Get devnet USDC:');
-        console.error('  1. Go to https://faucet.circle.com');
-        console.error('  2. Select: Solana, Devnet');
-        console.error('  3. Paste your address: ' + wallet.publicKey.toBase58());
-        console.error('  4. Click "Get Tokens"');
-        console.error('');
-        console.error('Then run this command again.');
-        process.exit(1);
-      }
-      console.log('           ✅ enough to play');
-
-      // Check 3: Game is accepting entries
+    case 'save-round': {
       const game = await program.account.game.fetch(gamePDA);
-      console.log('Round:     ' + game.round);
-      console.log('Jackpot:   ' + fmtUsdc(game.jackpotPool) + ' USDC');
-      if (!game.acceptingEntries) {
-        console.error('');
-        console.error('❌ Round ' + game.round + ' is not accepting entries. Wait for the next round.');
-        process.exit(1);
-      }
-      console.log('Status:    ✅ accepting entries');
+      require(game.gameOver, 'Game must be over to save round');
+      const [roundResultPDA] = getRoundResultPDA(gamePDA, game.round);
+      console.log('Saving round', game.round, 'results...');
+      const tx = await program.methods.saveRound().accounts({
+        authority: wallet.publicKey,
+        game: gamePDA,
+        roundResult: roundResultPDA,
+        systemProgram: SystemProgram.programId,
+      }).rpc();
+      console.log('Saved! TX:', tx);
+      break;
+    }
 
-      // Check 4: Not already entered this round
-      const [ticketPDA] = getTicketPDA(gamePDA, wallet.publicKey, game.round);
-      try {
-        await program.account.ticket.fetch(ticketPDA);
-        console.error('');
-        console.error('❌ You already entered round ' + game.round + '! Wait for the next round.');
-        process.exit(1);
-      } catch (e) {
-        // Good — no ticket yet
-      }
-
-      // All checks passed — enter!
+    case 'history': {
+      const game = await program.account.game.fetch(gamePDA);
+      console.log('=== THE FLIP — Round History ===');
       console.log('');
-      console.log('Predictions: ' + preds.toUpperCase());
-      console.log('Entering...');
-
-      try {
-        const tx = await program.methods.enter(parsed).accounts({
-          player: wallet.publicKey,
-          game: gamePDA,
-          ticket: ticketPDA,
-          playerTokenAccount: playerATA,
-          vault: vaultPDA,
-          systemProgram: SystemProgram.programId,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        }).rpc();
-
-        console.log('');
-        console.log('🎉 Entry confirmed!');
-        console.log('TX: ' + tx);
-        console.log('Explorer: https://explorer.solana.com/tx/' + tx + '?cluster=devnet');
-        console.log('');
-        console.log('Your ticket is live. Flips happen every ~8 hours.');
-        console.log('Check results: node app/demo.mjs ticket ' + wallet.publicKey.toBase58());
-      } catch (e) {
-        console.error('');
-        console.error('❌ Entry failed: ' + (e.message?.slice(0, 120) || e));
-        process.exit(1);
+      for (let r = 0; r <= game.round; r++) {
+        try {
+          const [pda] = getRoundResultPDA(gamePDA, r);
+          const result = await program.account.roundResult.fetch(pda);
+          const flips = result.flipResults.map(f => f === 1 ? 'H' : f === 2 ? 'T' : '?').join('');
+          const jackpot = fmtUsdc(result.jackpotPool);
+          const ts = new Date(Number(result.timestamp) * 1000).toISOString().slice(0, 16);
+          console.log(`Round ${result.round}: ${result.totalEntries} entries | ${result.winners} winners | Jackpot: ${jackpot} USDC | ${flips} | ${ts}`);
+        } catch (e) {
+          // No saved result for this round
+        }
       }
+      console.log('');
+      console.log('Current round:', game.round, '| Jackpot:', fmtUsdc(game.jackpotPool), 'USDC');
       break;
     }
 
     case 'crank-all': {
       const game = await program.account.game.fetch(gamePDA);
       console.log('Finding all tickets for round', game.round, '...');
+      
       const roundTickets = await findRoundTickets(connection, game.round);
       console.log('Found', roundTickets.length, 'unsettled tickets in round', game.round);
+      
       let cranked = 0;
       for (const t of roundTickets) {
         try {
           await program.methods.crank().accounts({
-            cranker: wallet.publicKey, game: gamePDA, ticket: t.publicKey,
+            cranker: wallet.publicKey,
+            game: gamePDA,
+            ticket: t.publicKey,
           }).rpc();
-          console.log('  Cranked', t.account.player.toBase58().slice(0,8) + '...');
+          const status = t.account.alive ? 'ALIVE' : 'DEAD';
+          console.log('  Cranked', t.account.player.toBase58().slice(0,8) + '...', '→', status);
           cranked++;
         } catch (e) {
           console.log('  Skip', t.account.player.toBase58().slice(0,8) + '...:', e.message?.slice(0, 60));
@@ -674,16 +577,22 @@ async function main() {
     case 'settle-all': {
       const game = await program.account.game.fetch(gamePDA);
       console.log('Finding all tickets to settle in round', game.round, '...');
+      
       const roundTickets = await findRoundTickets(connection, game.round);
       console.log('Found', roundTickets.length, 'unsettled tickets');
+      
       let settled = 0;
       for (const t of roundTickets) {
         try {
           const playerATA = await getAssociatedTokenAddress(USDC_MINT, t.account.player);
           await program.methods.settle().accounts({
-            settler: wallet.publicKey, game: gamePDA, ticket: t.publicKey,
-            player: t.account.player, playerTokenAccount: playerATA,
-            vault: vaultPDA, tokenProgram: TOKEN_PROGRAM_ID,
+            settler: wallet.publicKey,
+            game: gamePDA,
+            ticket: t.publicKey,
+            player: t.account.player,
+            playerTokenAccount: playerATA,
+            vault: vaultPDA,
+            tokenProgram: TOKEN_PROGRAM_ID,
           }).rpc();
           console.log('  Settled', t.account.player.toBase58().slice(0,8) + '...');
           settled++;
@@ -696,74 +605,115 @@ async function main() {
     }
 
     case 'operate': {
+      // Full round operation: close entries → flip all → crank all → settle all → new round
       const game = await program.account.game.fetch(gamePDA);
       const jackpotBefore = fmtUsdc(game.jackpotPool);
       console.log('=== OPERATE ROUND', game.round, '===');
       console.log('Entries:', game.totalEntries, '| Jackpot before:', jackpotBefore, 'USDC');
-      if (game.totalEntries === 0) { console.log('No entries — nothing to do.'); break; }
-
-      if (game.acceptingEntries) {
-        try {
-          await program.methods.closeEntries().accounts({ authority: wallet.publicKey, game: gamePDA }).rpc();
-          console.log('1. Entries closed');
-        } catch (e) { console.log('1. Close entries:', e.message?.slice(0, 60)); }
+      
+      if (game.totalEntries === 0) {
+        console.log('No entries — nothing to do.');
+        break;
       }
 
+      // Close entries
+      if (game.acceptingEntries) {
+        try {
+          await program.methods.closeEntries().accounts({
+            authority: wallet.publicKey,
+            game: gamePDA,
+          }).rpc();
+          console.log('1. Entries closed');
+        } catch (e) {
+          console.log('1. Close entries:', e.message?.slice(0, 60));
+        }
+      }
+
+      // Flip all
       try {
-        await program.methods.flipAll().accounts({ authority: wallet.publicKey, game: gamePDA }).rpc();
+        await program.methods.flipAll().accounts({
+          authority: wallet.publicKey,
+          game: gamePDA,
+        }).rpc();
         const g2 = await program.account.game.fetch(gamePDA);
         const results = g2.flipResults.slice(0, g2.currentFlip).map(r => r === 1 ? 'H' : 'T').join('');
         console.log('2. Flipped:', results);
-      } catch (e) { console.log('2. Flip:', e.message?.slice(0, 60)); }
+      } catch (e) {
+        console.log('2. Flip:', e.message?.slice(0, 60));
+      }
 
+      // Crank all
       const roundTickets = await findRoundTickets(connection, game.round);
       console.log('3. Cranking', roundTickets.length, 'tickets...');
+      
       let winners = 0;
       for (const t of roundTickets) {
         try {
-          await program.methods.crank().accounts({ cranker: wallet.publicKey, game: gamePDA, ticket: t.publicKey }).rpc();
+          await program.methods.crank().accounts({
+            cranker: wallet.publicKey,
+            game: gamePDA,
+            ticket: t.publicKey,
+          }).rpc();
+          // Refetch to check result
           const updated = await program.account.ticket.fetch(t.publicKey);
           if (updated.alive && updated.score === 20) winners++;
         } catch (e) { /* already cranked */ }
       }
       console.log('   Winners:', winners);
 
+      // Settle all
       console.log('4. Settling all tickets...');
       for (const t of roundTickets) {
         try {
           const playerATA = await getAssociatedTokenAddress(USDC_MINT, t.account.player);
           await program.methods.settle().accounts({
-            settler: wallet.publicKey, game: gamePDA, ticket: t.publicKey,
-            player: t.account.player, playerTokenAccount: playerATA,
-            vault: vaultPDA, tokenProgram: TOKEN_PROGRAM_ID,
+            settler: wallet.publicKey,
+            game: gamePDA,
+            ticket: t.publicKey,
+            player: t.account.player,
+            playerTokenAccount: playerATA,
+            vault: vaultPDA,
+            tokenProgram: TOKEN_PROGRAM_ID,
           }).rpc();
         } catch (e) { /* already settled */ }
       }
       console.log('   All settled');
 
+      // Save round history
       try {
-        await program.methods.newRound().accounts({ authority: wallet.publicKey, game: gamePDA }).rpc();
+        const [roundResultPDA] = getRoundResultPDA(gamePDA, game.round);
+        await program.methods.saveRound().accounts({
+          authority: wallet.publicKey,
+          game: gamePDA,
+          roundResult: roundResultPDA,
+          systemProgram: SystemProgram.programId,
+        }).rpc();
+        console.log('5. Round history saved on-chain');
+      } catch (e) {
+        console.log('5. Save round:', e.message?.slice(0, 60));
+      }
+
+      // New round
+      try {
+        await program.methods.newRound().accounts({
+          authority: wallet.publicKey,
+          game: gamePDA,
+        }).rpc();
         const finalGame = await program.account.game.fetch(gamePDA);
         const jackpotAfter = fmtUsdc(finalGame.jackpotPool);
-        console.log('5. New round', finalGame.round, 'started');
+        console.log('6. New round', finalGame.round, 'started');
         console.log('');
         console.log('=== RESULT ===');
         console.log('Round', game.round, ':', game.totalEntries, 'entries,', winners, 'winners');
         console.log('Jackpot:', jackpotBefore, '→', jackpotAfter, 'USDC');
-      } catch (e) { console.log('5. New round:', e.message?.slice(0, 60)); }
+      } catch (e) {
+        console.log('6. New round:', e.message?.slice(0, 60));
+      }
       break;
     }
 
     default:
       console.error('Unknown command:', cmd);
-      console.log('');
-      console.log('Available commands:');
-      console.log('  play <HHTHTT...>    Enter the game (recommended for players)');
-      console.log('  status              Show game state');
-      console.log('  ticket <pubkey>     Show a player\'s ticket');
-      console.log('');
-      console.log('Operator commands:');
-      console.log('  init, flip, flip-all, crank, settle, new-round, withdraw-fees');
       process.exit(1);
   }
 }
