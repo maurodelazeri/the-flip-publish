@@ -1,0 +1,821 @@
+{
+  "address": "7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX",
+  "metadata": {
+    "name": "the_flip",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "THE FLIP - $1 to $1M coin flip game on Solana"
+  },
+  "instructions": [
+    {
+      "name": "close_entries",
+      "docs": [
+        "Close entries manually (authority only)."
+      ],
+      "discriminator": [
+        253,
+        235,
+        184,
+        82,
+        7,
+        50,
+        8,
+        208
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game.authority",
+                "account": "Game"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_game_v1",
+      "docs": [
+        "Close old game PDA for migration. Authority only."
+      ],
+      "discriminator": [
+        249,
+        0,
+        223,
+        160,
+        229,
+        252,
+        135,
+        230
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "crank",
+      "docs": [
+        "Crank a ticket: check predictions against flips. Permissionless."
+      ],
+      "discriminator": [
+        0,
+        232,
+        3,
+        195,
+        124,
+        117,
+        105,
+        53
+      ],
+      "accounts": [
+        {
+          "name": "cranker",
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game.authority",
+                "account": "Game"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "enter",
+      "docs": [
+        "Player enters the game. Transfers 1 USDC to the vault and creates a ticket PDA."
+      ],
+      "discriminator": [
+        139,
+        49,
+        209,
+        114,
+        88,
+        91,
+        77,
+        134
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game.authority",
+                "account": "Game"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket",
+          "writable": true
+        },
+        {
+          "name": "player_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "predictions",
+          "type": {
+            "array": [
+              "u8",
+              20
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "flip",
+      "docs": [
+        "Authority executes a coin flip. Result derived from on-chain slot hash."
+      ],
+      "discriminator": [
+        24,
+        243,
+        78,
+        161,
+        192,
+        246,
+        102,
+        103
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game.authority",
+                "account": "Game"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "flip_all",
+      "docs": [
+        "Authority executes ALL remaining coin flips in a single transaction."
+      ],
+      "discriminator": [
+        183,
+        104,
+        211,
+        115,
+        104,
+        119,
+        23,
+        163
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game.authority",
+                "account": "Game"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_game",
+      "docs": [
+        "Initialize a new game. Creates the game state PDA and the USDC vault."
+      ],
+      "discriminator": [
+        44,
+        62,
+        102,
+        247,
+        126,
+        208,
+        130,
+        215
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "new_round",
+      "docs": [
+        "Start a new round. Jackpot carries over if no winner. Authority only."
+      ],
+      "discriminator": [
+        16,
+        43,
+        233,
+        83,
+        204,
+        132,
+        201,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game.authority",
+                "account": "Game"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "settle",
+      "docs": [
+        "Settle a ticket: pay winnings from the vault. Permissionless."
+      ],
+      "discriminator": [
+        175,
+        42,
+        185,
+        87,
+        144,
+        131,
+        102,
+        212
+      ],
+      "accounts": [
+        {
+          "name": "settler",
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game.authority",
+                "account": "Game"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket",
+          "writable": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "player_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdraw_fees",
+      "docs": [
+        "Authority withdraws accumulated operator fees from the vault."
+      ],
+      "discriminator": [
+        198,
+        212,
+        171,
+        109,
+        144,
+        215,
+        174,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game.authority",
+                "account": "Game"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Game",
+      "discriminator": [
+        27,
+        90,
+        166,
+        125,
+        74,
+        100,
+        121,
+        18
+      ]
+    },
+    {
+      "name": "Ticket",
+      "discriminator": [
+        41,
+        228,
+        24,
+        165,
+        78,
+        90,
+        235,
+        200
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "EntriesClosed",
+      "msg": "Entries are closed"
+    },
+    {
+      "code": 6001,
+      "name": "GameAlreadyStarted",
+      "msg": "Game has already started"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidPrediction",
+      "msg": "Invalid prediction: must be 1 (H) or 2 (T)"
+    },
+    {
+      "code": 6003,
+      "name": "AllFlipsDone",
+      "msg": "All flips have been executed"
+    },
+    {
+      "code": 6004,
+      "name": "GameOver",
+      "msg": "Game is over"
+    },
+    {
+      "code": 6005,
+      "name": "NoEntries",
+      "msg": "No entries in the game"
+    },
+    {
+      "code": 6006,
+      "name": "Unauthorized",
+      "msg": "Unauthorized"
+    },
+    {
+      "code": 6007,
+      "name": "NoFlipsYet",
+      "msg": "No flips yet"
+    },
+    {
+      "code": 6008,
+      "name": "TicketDead",
+      "msg": "Ticket is dead"
+    },
+    {
+      "code": 6009,
+      "name": "AlreadyCranked",
+      "msg": "Already cranked"
+    },
+    {
+      "code": 6010,
+      "name": "NotFullyCranked",
+      "msg": "Not fully cranked"
+    },
+    {
+      "code": 6011,
+      "name": "AlreadySettled",
+      "msg": "Already settled"
+    },
+    {
+      "code": 6012,
+      "name": "GameNotOver",
+      "msg": "Game not over"
+    },
+    {
+      "code": 6013,
+      "name": "TicketGameMismatch",
+      "msg": "Ticket/game mismatch"
+    },
+    {
+      "code": 6014,
+      "name": "PlayerMismatch",
+      "msg": "Player mismatch"
+    },
+    {
+      "code": 6015,
+      "name": "InsufficientFees",
+      "msg": "Insufficient operator fees"
+    },
+    {
+      "code": 6016,
+      "name": "UnsettledTickets",
+      "msg": "All tickets must be settled before starting a new round"
+    }
+  ],
+  "types": [
+    {
+      "name": "Game",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          },
+          {
+            "name": "current_flip",
+            "type": "u8"
+          },
+          {
+            "name": "flip_results",
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "milestone_pool",
+            "type": "u64"
+          },
+          {
+            "name": "jackpot_pool",
+            "type": "u64"
+          },
+          {
+            "name": "operator_pool",
+            "type": "u64"
+          },
+          {
+            "name": "total_entries",
+            "type": "u32"
+          },
+          {
+            "name": "tickets_alive",
+            "type": "u32"
+          },
+          {
+            "name": "tier_counts",
+            "type": {
+              "array": [
+                "u32",
+                6
+              ]
+            }
+          },
+          {
+            "name": "game_over",
+            "type": "bool"
+          },
+          {
+            "name": "accepting_entries",
+            "type": "bool"
+          },
+          {
+            "name": "round",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Ticket",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "game",
+            "type": "pubkey"
+          },
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "round",
+            "type": "u8"
+          },
+          {
+            "name": "predictions",
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "alive",
+            "type": "bool"
+          },
+          {
+            "name": "score",
+            "type": "u8"
+          },
+          {
+            "name": "last_cranked_flip",
+            "type": "u8"
+          },
+          {
+            "name": "died_at_flip",
+            "type": "u8"
+          },
+          {
+            "name": "settled",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}
