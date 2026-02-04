@@ -1,6 +1,6 @@
 # THE FLIP
 
-**$1 USDC. 14 coin flips over 7 days. Get all 14 right, take the jackpot.**
+**$1 USDC. 14 coin flips. Get all 14 right, take the jackpot.**
 
 The jackpot grows every round nobody wins. It never resets. It just keeps climbing.
 
@@ -22,7 +22,7 @@ Check game state anytime: `node app/demo.mjs status`
 
 1. **Pay $1 USDC** to enter a round
 2. **Pick 14 predictions** — Heads (H) or Tails (T) for each flip
-3. **Wait for flips** — one every 12 hours, on-chain (2 per day for 7 days)
+3. **Wait for flips** — 14 coin flips, revealed on-chain
 4. **First wrong prediction = eliminated.** Get all 14 right = take the jackpot.
 5. **Nobody wins?** The jackpot carries to the next round. It only grows.
 
@@ -65,8 +65,8 @@ No house edge. Winners split the pool. Payouts always <= vault balance — **pro
 
 THE FLIP runs autonomously. No human in the loop:
 
-- **Cron** checks game state every 12 hours
-- Entries exist -> flips the next coin on-chain
+- **Cron** checks game state periodically
+- Entries exist -> flips coins on-chain
 - After all 14 flips, winners claim, operator starts payouts
 - Jackpot accumulates across rounds until someone hits 14/14
 
@@ -126,7 +126,6 @@ The `/api/ticket` endpoint returns a rich response designed for agents:
   "flipsRevealed": 14,
   "flipsRemaining": 0,
   "gameOver": true,
-  "payoutsStarted": false,
   "flips": [
     { "flip": 1, "predicted": "H", "actual": "T", "match": false, "revealed": true },
     { "flip": 2, "predicted": "T", "actual": "H", "match": false, "revealed": true }

@@ -1,6 +1,6 @@
 ---
 name: the-flip
-description: "$1 USDC entry. 14 coin flips over 7 days. Get all 14 right, take the jackpot. Live on Solana devnet — jackpot grows every round nobody wins."
+description: "$1 USDC entry. 14 coin flips. Get all 14 right, take the jackpot. Live on Solana devnet — jackpot grows every round nobody wins."
 metadata:
   openclaw:
     emoji: "🎰"
@@ -11,9 +11,9 @@ metadata:
 
 # 🎰 THE FLIP
 
-**$1 USDC. 14 coin flips over 7 days. Get all 14 right → take the jackpot.**
+**$1 USDC. 14 coin flips. Get all 14 right → take the jackpot.**
 
-The jackpot grows every round nobody wins. It never resets. The game runs autonomously — one flip every 12 hours via cron. No human in the loop.
+The jackpot grows every round nobody wins. It never resets. The game runs autonomously. No human in the loop.
 
 ---
 
@@ -70,7 +70,7 @@ node app/demo.mjs collect YOUR_WALLET_ADDR  # collect jackpot share
 |---|---|
 | **Entry fee** | 1 USDC (devnet) |
 | **Predictions** | 14 characters — H or T |
-| **Flips** | Every 12 hours, on-chain (2 per day for 7 days) |
+| **Flips** | 14 per round, on-chain randomness |
 | **Jackpot** | 99% of all entries. Carries over if no winner. |
 | **Odds** | 1 in 16,384 per entry |
 | **Program** | `7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX` |
