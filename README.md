@@ -175,6 +175,142 @@ node app/demo.mjs full-demo              # complete demo cycle
 
 ---
 
+## Reading On-Chain Data (Build Your Own Frontend)
+
+All game state lives on-chain. No backend, no API — just Solana accounts. Here's how to query everything:
+
+### Derive the PDAs
+
+```javascript
+import { PublicKey } from '@solana/web3.js';
+
+const PROGRAM_ID = new PublicKey('7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX');
+const AUTHORITY  = new PublicKey('89FeAXomb6QvvQ5CQ1cjouRAP3EDu3ZyrV13Xt2HNbLa');
+
+// Game state — round, jackpot, entries, flip results
+const [gamePDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from('game'), AUTHORITY.toBuffer()], PROGRAM_ID
+);
+
+// Vault — PDA-controlled SPL token account holding all USDC
+const [vaultPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from('vault'), AUTHORITY.toBuffer()], PROGRAM_ID
+);
+
+// Player ticket — one per player per round
+const [ticketPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from('ticket'), gamePDA.toBuffer(), PLAYER.toBuffer(), Buffer.from([round])],
+  PROGRAM_ID
+);
+
+// Round history — stored after each round resolves
+const [roundResultPDA] = PublicKey.findProgramAddressSync(
+  [Buffer.from('round_result'), gamePDA.toBuffer(), Buffer.from([round])],
+  PROGRAM_ID
+);
+```
+
+### Account Structures
+
+**Game** (single instance — the core state)
+
+| Field | Type | Description |
+|---|---|---|
+| `authority` | Pubkey | Operator wallet |
+| `usdc_mint` | Pubkey | USDC token mint |
+| `vault` | Pubkey | PDA vault address |
+| `round` | u8 | Current round number |
+| `current_flip` | u8 | Flips executed so far (0–20) |
+| `flip_results` | [u8; 20] | 0 = Heads, 1 = Tails |
+| `jackpot_pool` | u64 | Jackpot in USDC lamports (÷ 1e6) |
+| `operator_pool` | u64 | Operator fees in USDC lamports |
+| `total_entries` | u32 | Entries this round |
+| `tickets_alive` | u32 | Players still in |
+| `accepting_entries` | bool | Can new players enter? |
+| `game_over` | bool | All 20 flips done? |
+| `tier_counts` | [u32; 6] | Survival distribution |
+
+**Ticket** (one per player per round)
+
+| Field | Type | Description |
+|---|---|---|
+| `game` | Pubkey | Game PDA |
+| `player` | Pubkey | Player wallet |
+| `round` | u8 | Round number |
+| `predictions` | [u8; 20] | Player's H/T picks (0/1) |
+| `alive` | bool | Still in the game? |
+| `score` | u8 | Correct predictions so far |
+| `last_cranked_flip` | u8 | Last flip scored |
+| `died_at_flip` | u8 | Which flip eliminated them (0 = still alive) |
+| `settled` | bool | Winnings paid out? |
+
+**RoundResult** (historical — one per completed round)
+
+| Field | Type | Description |
+|---|---|---|
+| `game` | Pubkey | Game PDA |
+| `round` | u8 | Round number |
+| `flip_results` | [u8; 20] | Final coin flip outcomes |
+| `total_entries` | u32 | How many played |
+| `jackpot_pool` | u64 | Jackpot at round end |
+| `winners` | u32 | Players who hit 20/20 |
+| `timestamp` | i64 | Unix timestamp |
+
+### Fetch with Anchor
+
+```javascript
+import { Program, AnchorProvider } from '@coral-xyz/anchor';
+import idl from './idl/the_flip.json' assert { type: 'json' };
+
+const program = new Program(idl, provider);
+
+// Game state
+const game = await program.account.game.fetch(gamePDA);
+console.log(`Round ${game.round} — Jackpot: $${(Number(game.jackpotPool) / 1e6).toFixed(2)}`);
+console.log(`Entries: ${game.totalEntries}, Alive: ${game.ticketsAlive}`);
+console.log(`Flips: ${game.currentFlip}/20`);
+
+// A player's ticket
+const ticket = await program.account.ticket.fetch(ticketPDA);
+console.log(`Alive: ${ticket.alive}, Score: ${ticket.score}/20`);
+
+// Round history
+const result = await program.account.roundResult.fetch(roundResultPDA);
+console.log(`Round ${result.round}: ${result.winners} winners from ${result.totalEntries} entries`);
+```
+
+### Fetch Without Anchor (raw RPC)
+
+```bash
+# Game state (base64 → decode with IDL layout)
+curl -s https://api.devnet.solana.com -X POST -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0", "id": 1,
+  "method": "getAccountInfo",
+  "params": ["YOUR_GAME_PDA", {"encoding": "base64"}]
+}'
+
+# All tickets for current round (filter by account size = 99 bytes)
+curl -s https://api.devnet.solana.com -X POST -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0", "id": 1,
+  "method": "getProgramAccounts",
+  "params": ["7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX", {
+    "filters": [{"dataSize": 99}],
+    "encoding": "base64"
+  }]
+}'
+
+# Vault USDC balance
+curl -s https://api.devnet.solana.com -X POST -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0", "id": 1,
+  "method": "getTokenAccountBalance",
+  "params": ["Faxi5RatHTqj6copJXgrgLsW8pWTNUC2ARQ6dfazmCf9"]
+}'
+```
+
+The IDL is included in `idl/the_flip.json` — use it to deserialize accounts in any language.
+
+---
+
 ## Strategy
 
 - Every sequence has equal odds — `HHHHHHHHHHHHHHHHHHHH` is just as likely as any random mix
