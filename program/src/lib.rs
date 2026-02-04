@@ -5,12 +5,12 @@ declare_id!("7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX");
 
 // Game constants
 const ENTRY_FEE: u64 = 1_000_000; // 1 USDC (6 decimals)
-const TOTAL_FLIPS: u8 = 20;
+const TOTAL_FLIPS: u8 = 14;
 const OPERATOR_FEE_BPS: u64 = 100;   // 1% to operator (covers Solana transaction fees)
 const MILESTONE_POOL_BPS: u64 = 0;    // 0% to milestone (disabled — all prize money goes to jackpot)
 const BPS_BASE: u64 = 10000;
 // Jackpot gets the rest: 99%
-const MILESTONE_TIERS: [u8; 5] = [15, 16, 17, 18, 19];
+const MILESTONE_TIERS: [u8; 5] = [10, 11, 12, 13, 14];
 const TIER_SPLIT_BPS: u64 = 2000; // Each tier gets 20% of milestone pool
 
 #[program]
@@ -26,7 +26,7 @@ pub mod the_flip {
         game.bump = ctx.bumps.game;
         game.vault_bump = ctx.bumps.vault;
         game.current_flip = 0;
-        game.flip_results = [0u8; 20];
+        game.flip_results = [0u8; 14];
         game.milestone_pool = 0;
         game.jackpot_pool = 0;
         game.operator_pool = 0;
@@ -42,7 +42,7 @@ pub mod the_flip {
     }
 
     /// Player enters the game. Transfers 1 USDC to the vault and creates a ticket PDA.
-    pub fn enter(ctx: Context<Enter>, predictions: [u8; 20]) -> Result<()> {
+    pub fn enter(ctx: Context<Enter>, predictions: [u8; 14]) -> Result<()> {
         let game = &mut ctx.accounts.game;
 
         require!(game.accepting_entries, FlipError::EntriesClosed);
@@ -127,7 +127,7 @@ pub mod the_flip {
 
         if game.current_flip == TOTAL_FLIPS {
             game.game_over = true;
-            msg!("All 20 flips complete. Game over!");
+            msg!("All 14 flips complete. Game over!");
         }
 
         Ok(())
@@ -159,7 +159,7 @@ pub mod the_flip {
         }
 
         game.game_over = true;
-        msg!("All 20 flips executed in one transaction!");
+        msg!("All 14 flips executed in one transaction!");
         Ok(())
     }
 
@@ -208,10 +208,10 @@ pub mod the_flip {
 
         ticket.last_cranked_flip = game.current_flip;
 
-        // If game over and ticket survived all 20 = jackpot
+        // If game over and ticket survived all 14 = jackpot
         if game.game_over && ticket.alive && ticket.score == TOTAL_FLIPS {
             game.tier_counts[5] += 1;
-            msg!("JACKPOT WINNER: {} with 20/20!", ticket.player);
+            msg!("JACKPOT WINNER: {} with 14/14!", ticket.player);
         }
 
         Ok(())
@@ -325,7 +325,7 @@ pub mod the_flip {
         // This prevents the authority from zeroing the jackpot before winners can claim.
         require!(game.tickets_alive == 0, FlipError::UnsettledTickets);
 
-        // Jackpot carries over if no one won 20/20
+        // Jackpot carries over if no one won 14/14
         if game.tier_counts[5] > 0 {
             game.jackpot_pool = 0; // Was paid out
         }
@@ -336,7 +336,7 @@ pub mod the_flip {
 
         // Reset game state for new round
         game.current_flip = 0;
-        game.flip_results = [0u8; 20];
+        game.flip_results = [0u8; 14];
         game.total_entries = 0;
         game.tickets_alive = 0;
         game.tier_counts = [0u32; 6];
@@ -636,7 +636,7 @@ pub struct Game {
     pub bump: u8,
     pub vault_bump: u8,
     pub current_flip: u8,
-    pub flip_results: [u8; 20],
+    pub flip_results: [u8; 14],
     pub milestone_pool: u64,
     pub jackpot_pool: u64,
     pub operator_pool: u64,
@@ -654,7 +654,7 @@ pub struct Ticket {
     pub game: Pubkey,
     pub player: Pubkey,
     pub round: u8,
-    pub predictions: [u8; 20],
+    pub predictions: [u8; 14],
     pub alive: bool,
     pub score: u8,
     pub last_cranked_flip: u8,
@@ -668,10 +668,10 @@ pub struct Ticket {
 pub struct RoundResult {
     pub game: Pubkey,           // 32 — which game
     pub round: u8,              // 1  — which round
-    pub flip_results: [u8; 20], // 20 — the coin flip outcomes
+    pub flip_results: [u8; 14], // 14 — the coin flip outcomes
     pub total_entries: u32,     // 4  — how many players entered
     pub jackpot_pool: u64,      // 8  — jackpot at end of round (0 if winner paid out, carries if not)
-    pub winners: u32,           // 4  — number of 20/20 winners
+    pub winners: u32,           // 4  — number of 14/14 winners
     pub timestamp: i64,         // 8  — when the round ended
     pub bump: u8,               // 1  — PDA bump
 }

@@ -5,9 +5,9 @@
  * 
  * Usage:
  *   node app/demo.mjs init                    Initialize game + vault
- *   node app/demo.mjs enter <HHTHTT...>       Enter with 20 H/T predictions
+ *   node app/demo.mjs enter <HHTHTT...>       Enter with 14 H/T predictions
  *   node app/demo.mjs flip                    Execute one coin flip
- *   node app/demo.mjs flip-all                Execute all 20 flips in one tx
+ *   node app/demo.mjs flip-all                Execute all 14 flips in one tx
  *   node app/demo.mjs crank <player_pubkey>   Evaluate ticket vs flip results
  *   node app/demo.mjs settle <player_pubkey>  Pay winnings from vault
  *   node app/demo.mjs status                  Show game state
@@ -34,10 +34,10 @@ import path from 'path';
 const DEVNET_URL = 'https://api.devnet.solana.com';
 const USDC_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
 const PROGRAM_ID = new PublicKey('7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX');
-const TOTAL_FLIPS = 20;
+const TOTAL_FLIPS = 14;
 
 // Load IDL
-const IDL_PATH = path.join(import.meta.dirname, '..', 'target', 'idl', 'the_flip.json');
+const IDL_PATH = path.join(import.meta.dirname, '..', 'idl', 'the_flip.json');
 
 // Load wallet
 function loadWallet(keyPath) {
@@ -75,9 +75,9 @@ function getTicketPDA(game, player, round) {
 
 // Parse predictions string (HHTHTT...) to array of u8 (1=H, 2=T)
 function parsePredictions(str) {
-  if (str.length !== 20) throw new Error('Must be exactly 20 predictions (H or T)');
+  if (str.length !== 14) throw new Error('Must be exactly 14 predictions (H or T)');
   const result = [];
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < TOTAL_FLIPS; i++) {
     const c = str[i].toUpperCase();
     if (c === 'H') result.push(1);
     else if (c === 'T') result.push(2);
@@ -98,7 +98,7 @@ async function findRoundTickets(connection, round) {
   const tickets = [];
   for (const r of raw) {
     const data = r.account.data;
-    // Layout: discriminator(8) + game(32) + player(32) + round(1) + predictions(20) + alive(1) + score(1) + lastCranked(1) + diedAt(1) + settled(1) + bump(1)
+    // Layout: discriminator(8) + game(32) + player(32) + round(1) + predictions(14) + alive(1) + score(1) + lastCranked(1) + diedAt(1) + settled(1) + bump(1)
     const ticketRound = data[72];
     const settled = data[97];
     if (ticketRound === round && settled === 0) {
@@ -225,12 +225,12 @@ async function main() {
       const idx = game.currentFlip - 1;
       const result = flipToStr(game.flipResults[idx]);
       console.log('Flip #' + game.currentFlip + ': ' + (result === 'H' ? 'HEADS' : 'TAILS') + '  TX: ' + tx);
-      if (game.gameOver) console.log('GAME OVER - all 20 flips complete!');
+      if (game.gameOver) console.log('GAME OVER - all 14 flips complete!');
       break;
     }
 
     case 'flip-all': {
-      console.log('Executing all 20 flips in one transaction...');
+      console.log('Executing all 14 flips in one transaction...');
       const tx = await program.methods.flipAll().accounts({
         authority: wallet.publicKey,
         game: gamePDA,
@@ -243,7 +243,7 @@ async function main() {
         .join('  ');
       console.log('All flips done! TX:', tx);
       console.log('Results:', results);
-      console.log('GAME OVER - all 20 flips complete!');
+      console.log('GAME OVER - all 14 flips complete!');
       break;
     }
 
@@ -424,7 +424,7 @@ async function main() {
       console.log('');
       console.log('Step 2: Enter with random predictions...');
       const chars = [];
-      for (let i = 0; i < 20; i++) chars.push(Math.random() < 0.5 ? 'H' : 'T');
+      for (let i = 0; i < TOTAL_FLIPS; i++) chars.push(Math.random() < 0.5 ? 'H' : 'T');
       const predStr = chars.join('');
       const parsed = parsePredictions(predStr);
 
@@ -448,7 +448,7 @@ async function main() {
 
       // 4. Flip all
       console.log('');
-      console.log('Step 3: Execute all 20 flips...');
+      console.log('Step 3: Execute all 14 flips...');
       try {
         await program.methods.flipAll().accounts({
           authority: wallet.publicKey,
@@ -472,7 +472,7 @@ async function main() {
         }).rpc();
         const ticket = await program.account.ticket.fetch(ticketPDA);
         const status = ticket.alive
-          ? 'ALIVE (score: ' + ticket.score + '/20)'
+          ? 'ALIVE (score: ' + ticket.score + '/14)'
           : 'DEAD at flip ' + ticket.diedAtFlip + ' (score: ' + ticket.score + ')';
         console.log('  ' + status);
       } catch (e) {
@@ -656,7 +656,7 @@ async function main() {
           }).rpc();
           // Refetch to check result
           const updated = await program.account.ticket.fetch(t.publicKey);
-          if (updated.alive && updated.score === 20) winners++;
+          if (updated.alive && updated.score === TOTAL_FLIPS) winners++;
         } catch (e) { /* already cranked */ }
       }
       console.log('   Winners:', winners);
