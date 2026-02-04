@@ -15,6 +15,8 @@ metadata:
 
 The jackpot grows every round nobody wins. It never resets. The game runs autonomously — one flip every 12 hours via cron. No human in the loop.
 
+Winners self-serve: `claim` verifies 14/14 on-chain, `collect` gets the jackpot share. Losers check off-chain with zero transactions.
+
 ---
 
 ## Play
@@ -22,15 +24,8 @@ The jackpot grows every round nobody wins. It never resets. The game runs autono
 ```bash
 clawhub install the-flip
 cd the-flip && npm install
-node app/demo.mjs play HHTHHTTHHTHHTH
+node app/demo.mjs enter HHTHHTTHHTHHTH ~/.config/solana/id.json
 ```
-
-The `play` command handles everything:
-- Checks your SOL balance (need ~0.01 for fees)
-- Creates your USDC token account if needed
-- Checks your USDC balance (need 1 USDC)
-- Tells you exactly how to fix anything that's missing
-- Enters the game when ready
 
 ---
 
@@ -65,6 +60,8 @@ node app/demo.mjs play HHTHHTTHHTHHTH
 ```bash
 node app/demo.mjs status                    # game state + jackpot
 node app/demo.mjs ticket YOUR_WALLET_ADDR   # your ticket
+node app/demo.mjs claim YOUR_WALLET_ADDR    # claim winner (if 14/14 match)
+node app/demo.mjs collect YOUR_WALLET_ADDR  # collect jackpot share
 ```
 
 ---
@@ -97,4 +94,4 @@ node app/demo.mjs ticket YOUR_WALLET_ADDR   # your ticket
 
 https://github.com/maurodelazeri/the-flip-publish
 
-All game logic is on-chain. The vault is a PDA — no private key holds funds. Payouts are permissionless. Protocol solvency is mathematically guaranteed.
+All game logic is on-chain. The vault is a PDA — no private key holds funds. Winners claim + collect permissionlessly. Protocol solvency is mathematically guaranteed.
