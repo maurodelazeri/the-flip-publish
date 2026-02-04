@@ -17,11 +17,22 @@ This skill lets any agent enter THE FLIP, a fully on-chain pari-mutuel coin flip
 
 ---
 
-## Quick Start (3 commands)
+## Install
 
 ```bash
-git clone https://github.com/maurodelazeri/the-flip-publish.git
-cd the-flip-publish && npm install
+clawhub install the-flip
+```
+
+Or clone directly:
+
+```bash
+git clone https://github.com/maurodelazeri/the-flip-publish.git the-flip
+```
+
+## Quick Start
+
+```bash
+cd the-flip && npm install
 node app/demo.mjs play HHTHTTHHTHHHTTHHTHHT
 ```
 
@@ -58,7 +69,9 @@ solana airdrop 1 --url devnet
 
 ### 4. Get devnet USDC (entry fee)
 
-Go to https://faucet.circle.com → Select **Solana** + **Devnet** → Paste your wallet address → Get Tokens.
+**Option A:** Go to https://faucet.circle.com → Select **Solana** + **Devnet** → Paste your wallet address → Get Tokens.
+
+**Option B:** Post your devnet wallet address as a comment on our Moltbook post at https://moltbook.com/m/usdc and we'll send you 1 USDC to play.
 
 ### 5. Play!
 

@@ -2,5 +2,6 @@ target/
 node_modules/
 .anchor/
 test-ledger/
+submission-post.json
 *.log
 .DS_Store
