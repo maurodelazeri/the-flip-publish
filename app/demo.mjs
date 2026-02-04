@@ -16,7 +16,11 @@
  *   node app/demo.mjs settle <pubkey>         Pay winnings
  *   node app/demo.mjs new-round               Start next round
  *   node app/demo.mjs withdraw-fees           Withdraw operator fees
+ *   node app/demo.mjs close-entries           Close entries manually
  *   node app/demo.mjs full-demo               Complete demo cycle
+ *   node app/demo.mjs crank-all               Crank all tickets in current round
+ *   node app/demo.mjs settle-all              Settle all tickets in current round
+ *   node app/demo.mjs operate                 Full round: close→flip→crank-all→settle-all→new-round
  */
 
 import { Connection, Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
@@ -86,6 +90,27 @@ function parsePredictions(str) {
 
 // Format flip result (1=H, 2=T)
 function flipToStr(r) { return r === 1 ? 'H' : r === 2 ? 'T' : '?'; }
+
+// Find all unsettled tickets for a given round via raw account scan
+async function findRoundTickets(connection, round) {
+  const raw = await connection.getProgramAccounts(PROGRAM_ID, {
+    filters: [{ dataSize: 99 }]
+  });
+  const tickets = [];
+  for (const r of raw) {
+    const data = r.account.data;
+    const ticketRound = data[72];
+    const settled = data[97];
+    if (ticketRound === round && settled === 0) {
+      const player = new PublicKey(data.slice(40, 72));
+      tickets.push({
+        publicKey: r.pubkey,
+        account: { player, round: ticketRound, alive: data[93] === 1, score: data[94], settled: settled === 1 }
+      });
+    }
+  }
+  return tickets;
+}
 
 // Format USDC amount (6 decimals)
 function fmtUsdc(raw) {
@@ -622,6 +647,110 @@ async function main() {
         console.error('❌ Entry failed: ' + (e.message?.slice(0, 120) || e));
         process.exit(1);
       }
+      break;
+    }
+
+    case 'crank-all': {
+      const game = await program.account.game.fetch(gamePDA);
+      console.log('Finding all tickets for round', game.round, '...');
+      const roundTickets = await findRoundTickets(connection, game.round);
+      console.log('Found', roundTickets.length, 'unsettled tickets in round', game.round);
+      let cranked = 0;
+      for (const t of roundTickets) {
+        try {
+          await program.methods.crank().accounts({
+            cranker: wallet.publicKey, game: gamePDA, ticket: t.publicKey,
+          }).rpc();
+          console.log('  Cranked', t.account.player.toBase58().slice(0,8) + '...');
+          cranked++;
+        } catch (e) {
+          console.log('  Skip', t.account.player.toBase58().slice(0,8) + '...:', e.message?.slice(0, 60));
+        }
+      }
+      console.log('Cranked', cranked, '/', roundTickets.length, 'tickets');
+      break;
+    }
+
+    case 'settle-all': {
+      const game = await program.account.game.fetch(gamePDA);
+      console.log('Finding all tickets to settle in round', game.round, '...');
+      const roundTickets = await findRoundTickets(connection, game.round);
+      console.log('Found', roundTickets.length, 'unsettled tickets');
+      let settled = 0;
+      for (const t of roundTickets) {
+        try {
+          const playerATA = await getAssociatedTokenAddress(USDC_MINT, t.account.player);
+          await program.methods.settle().accounts({
+            settler: wallet.publicKey, game: gamePDA, ticket: t.publicKey,
+            player: t.account.player, playerTokenAccount: playerATA,
+            vault: vaultPDA, tokenProgram: TOKEN_PROGRAM_ID,
+          }).rpc();
+          console.log('  Settled', t.account.player.toBase58().slice(0,8) + '...');
+          settled++;
+        } catch (e) {
+          console.log('  Skip', t.account.player.toBase58().slice(0,8) + '...:', e.message?.slice(0, 60));
+        }
+      }
+      console.log('Settled', settled, '/', roundTickets.length, 'tickets');
+      break;
+    }
+
+    case 'operate': {
+      const game = await program.account.game.fetch(gamePDA);
+      const jackpotBefore = fmtUsdc(game.jackpotPool);
+      console.log('=== OPERATE ROUND', game.round, '===');
+      console.log('Entries:', game.totalEntries, '| Jackpot before:', jackpotBefore, 'USDC');
+      if (game.totalEntries === 0) { console.log('No entries — nothing to do.'); break; }
+
+      if (game.acceptingEntries) {
+        try {
+          await program.methods.closeEntries().accounts({ authority: wallet.publicKey, game: gamePDA }).rpc();
+          console.log('1. Entries closed');
+        } catch (e) { console.log('1. Close entries:', e.message?.slice(0, 60)); }
+      }
+
+      try {
+        await program.methods.flipAll().accounts({ authority: wallet.publicKey, game: gamePDA }).rpc();
+        const g2 = await program.account.game.fetch(gamePDA);
+        const results = g2.flipResults.slice(0, g2.currentFlip).map(r => r === 1 ? 'H' : 'T').join('');
+        console.log('2. Flipped:', results);
+      } catch (e) { console.log('2. Flip:', e.message?.slice(0, 60)); }
+
+      const roundTickets = await findRoundTickets(connection, game.round);
+      console.log('3. Cranking', roundTickets.length, 'tickets...');
+      let winners = 0;
+      for (const t of roundTickets) {
+        try {
+          await program.methods.crank().accounts({ cranker: wallet.publicKey, game: gamePDA, ticket: t.publicKey }).rpc();
+          const updated = await program.account.ticket.fetch(t.publicKey);
+          if (updated.alive && updated.score === 20) winners++;
+        } catch (e) { /* already cranked */ }
+      }
+      console.log('   Winners:', winners);
+
+      console.log('4. Settling all tickets...');
+      for (const t of roundTickets) {
+        try {
+          const playerATA = await getAssociatedTokenAddress(USDC_MINT, t.account.player);
+          await program.methods.settle().accounts({
+            settler: wallet.publicKey, game: gamePDA, ticket: t.publicKey,
+            player: t.account.player, playerTokenAccount: playerATA,
+            vault: vaultPDA, tokenProgram: TOKEN_PROGRAM_ID,
+          }).rpc();
+        } catch (e) { /* already settled */ }
+      }
+      console.log('   All settled');
+
+      try {
+        await program.methods.newRound().accounts({ authority: wallet.publicKey, game: gamePDA }).rpc();
+        const finalGame = await program.account.game.fetch(gamePDA);
+        const jackpotAfter = fmtUsdc(finalGame.jackpotPool);
+        console.log('5. New round', finalGame.round, 'started');
+        console.log('');
+        console.log('=== RESULT ===');
+        console.log('Round', game.round, ':', game.totalEntries, 'entries,', winners, 'winners');
+        console.log('Jackpot:', jackpotBefore, '→', jackpotAfter, 'USDC');
+      } catch (e) { console.log('5. New round:', e.message?.slice(0, 60)); }
       break;
     }
 
