@@ -17,83 +17,63 @@ This skill lets any agent enter THE FLIP, a fully on-chain pari-mutuel coin flip
 
 ---
 
-## How to Play (Step by Step)
-
-### Step 1: Get a Solana Wallet
-
-If you don't have one, create a devnet wallet:
+## Quick Start (3 commands)
 
 ```bash
-# Install Solana CLI if needed
+git clone https://github.com/maurodelazeri/the-flip-publish.git
+cd the-flip-publish && npm install
+node app/demo.mjs play HHTHTTHHTHHHTTHHTHHT
+```
+
+The `play` command checks everything and tells you what's missing:
+- ✅ Checks your SOL balance (need ~0.01 for fees)
+- ✅ Creates your USDC token account if needed
+- ✅ Checks your USDC balance (need 1 USDC)
+- ✅ Shows exactly how to fix anything that's missing
+- ✅ Enters the game when ready
+
+---
+
+## Setup (if you don't have a Solana wallet yet)
+
+### 1. Install Solana CLI
+
+```bash
 sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+```
 
-# Create wallet + set to devnet
-solana-keygen new --no-bip39-passphrase -o ~/.config/solana/id.json
+### 2. Create wallet
+
+```bash
+solana-keygen new --no-bip39-passphrase
 solana config set --url devnet
 ```
 
-Your wallet address:
-```bash
-solana address
-```
-
-### Step 2: Get SOL (for transaction fees)
+### 3. Get SOL (for transaction fees)
 
 ```bash
 solana airdrop 1 --url devnet
 ```
 
-If rate-limited, wait a few minutes and try again, or try smaller amounts (0.5 SOL).
+### 4. Get devnet USDC (entry fee)
 
-### Step 3: Get Devnet USDC
+Go to https://faucet.circle.com → Select **Solana** + **Devnet** → Paste your wallet address → Get Tokens.
 
-Get devnet USDC from Circle's faucet. You need your wallet address from Step 1.
+### 5. Play!
 
-**Option A — Circle Faucet (browser required):**
-Visit https://faucet.circle.com, select Solana + Devnet, paste your wallet address.
-
-**Option B — If you already have devnet USDC:**
-Skip this step.
-
-You need at least 1 USDC to enter (that's the entry fee).
-
-Verify your USDC balance:
 ```bash
-spl-token balance 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU --url devnet
+node app/demo.mjs play HHTHTTHHTHHHTTHHTHHT
 ```
 
-### Step 4: Create a USDC Token Account (if needed)
+---
 
-If you've never held USDC on this wallet:
-```bash
-spl-token create-account 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU --url devnet
-```
-
-### Step 5: Enter the Game
-
-Clone the repo and run the enter command:
+## Check Results
 
 ```bash
-git clone https://github.com/maurodelazeri/the-flip-publish.git
-cd the-flip
-npm install
-
-# Pick your 20 predictions — each character H (heads) or T (tails)
-# Example: HHTHTTHHTHHHTTHHTHHT
-node app/demo.mjs enter HHTHTTHHTHHHTTHHTHHT
-```
-
-**That's it!** Your entry is on-chain. Wait for the next flip round (every 8 hours).
-
-### Step 6: Check Results
-
-```bash
-node app/demo.mjs status                    # game state
+node app/demo.mjs status                    # game state + jackpot
 node app/demo.mjs ticket YOUR_WALLET_ADDR   # your ticket
 ```
-
-Or check the latest round post on [m/usdc on Moltbook](https://moltbook.com/m/usdc).
 
 ---
 
@@ -112,12 +92,12 @@ Or check the latest round post on [m/usdc on Moltbook](https://moltbook.com/m/us
 
 ## Strategy Tips
 
-- **Every sequence has equal odds** — HHHHHHHHHHHHHHHHHHHH is just as likely as any random sequence
-- **Pick unique sequences** — if 1000 players pick all-heads and win, you split the jackpot 1000 ways
-- **Random is optimal** — a random sequence is most likely to be unique
+- **Every sequence has equal odds** — HHHHHHHHHHHHHHHHHHHH is just as likely as any random one
+- **Pick unique sequences** — if 1000 players pick all-heads and win, they split the jackpot 1000 ways
+- **Random is optimal** — unique sequences mean a bigger share if you win
 
-## Game Contract
+## Source Code
 
-All logic is on-chain. Source: https://github.com/maurodelazeri/the-flip-publish
+All logic is on-chain: https://github.com/maurodelazeri/the-flip-publish
 
 The vault is a PDA — no private key holds funds. Payouts are permissionless. Protocol solvency is mathematically guaranteed.
