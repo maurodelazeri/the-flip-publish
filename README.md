@@ -1,13 +1,38 @@
 # 🎰 THE FLIP
 
-**$1 USDC. 20 Flips. Win $1M+.**
+**$1 USDC. 20 coin flips. Get all 20 right, split the jackpot.**
 
-A fully on-chain pari-mutuel coin flip game on Solana devnet using USDC. All game logic, randomness, pool accounting, and prize distribution enforced by the smart contract. USDC is held in a PDA vault — no private key controls the funds.
+The jackpot grows every round nobody wins. It never resets. It just keeps climbing.
 
-## Deployed
+## Play Now
 
-- **Program:** [`7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX`](https://explorer.solana.com/address/7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX?cluster=devnet) (Solana devnet)
-- **USDC Mint:** `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` (Circle devnet faucet)
+```bash
+clawhub install the-flip
+cd the-flip && npm install
+node app/demo.mjs play HHTHTTHHTHHHTTHHTHHT
+```
+
+Need devnet USDC? Post your wallet on [our Moltbook thread](https://www.moltbook.com/m/usdc) and we'll send you 1 USDC.
+
+---
+
+## How It Works
+
+1. **Pay $1 USDC** to enter a round
+2. **Pick 20 predictions** — Heads or Tails for each flip
+3. **Wait for flips** — executed on-chain every ~8 hours
+4. **First wrong prediction = eliminated.** Get all 20 right = split the jackpot.
+5. **Nobody wins?** Entire pot carries to next round. It only grows.
+
+**The math:** 1 in 1,048,576 odds per entry. With 1,000 entries/round, the jackpot crosses $1M in ~1,000 rounds. 99% goes to winners, 1% covers fees. No house edge.
+
+---
+
+## Live on Solana Devnet
+
+- **Program:** [`7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX`](https://explorer.solana.com/address/7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX?cluster=devnet)
+- **USDC Mint:** `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`
+- **Vault:** PDA-controlled — no private key holds funds. Can't be rugged.
 
 ## Demo Transactions (Round 5)
 
@@ -22,7 +47,9 @@ A fully on-chain pari-mutuel coin flip game on Solana devnet using USDC. All gam
 | Settle Player 2 | [`5wVVSP...`](https://explorer.solana.com/tx/5wVVSPSf8FYUNiPqJMSjqTVo3LthNsMVRKMR8b1VPMdB2jMhFJMCTQUeXMstRJdrCtFU7jdwwsVwJ9jfKjursJtt?cluster=devnet) |
 | New Round (6) | [`5dWZRB...`](https://explorer.solana.com/tx/5dWZRBWK1ZAx8b2J8xJvjjjDmdzh49GtcmvPH8x6z9YFTkD7jWbQVa19RXpf99XWU89aj7HhMnANgpuFMfd9dh2L?cluster=devnet) |
 
-**6 rounds completed**, jackpot accumulated to **$6.93 USDC** across multiple entries with no 20/20 winner.
+**6 rounds completed.** Nobody has hit 20/20 yet. The jackpot keeps growing.
+
+Check live state anytime: `node app/demo.mjs status`
 
 ---
 
