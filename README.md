@@ -9,18 +9,20 @@ A fully on-chain pari-mutuel coin flip game on Solana devnet using USDC. All gam
 - **Program:** [`7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX`](https://explorer.solana.com/address/7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX?cluster=devnet) (Solana devnet)
 - **USDC Mint:** `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` (Circle devnet faucet)
 
-## Demo Transactions
+## Demo Transactions (Round 5)
 
 | Action | Transaction |
 |---|---|
-| Initialize | [`5JVHfz...`](https://explorer.solana.com/tx/5JVHfzWfp6V1eYLr31xTBizVXb4txvnzbdStFSeFUk3DXGhdsCm5AdFrQypaLdoxGLymHrFx89fDoe9CRWo43mQc?cluster=devnet) |
-| Enter (pay USDC) | [`5qozAr...`](https://explorer.solana.com/tx/5qozArSwsKyC42zHx4Evncb8FZzkQdaDEocU1HFBkk9UtdFAEUsZa3rmkk1vS4QKchqBvJwFVLkiM7gocVy21akJ?cluster=devnet) |
-| Flip All (20 flips) | [`4qig1x...`](https://explorer.solana.com/tx/4qig1xAnmZHmcjCvN8qfx2DVFb4bSQvPjQYrqx8HvKFVgSpLk9VXSxakVHRpjUs6vxQbw5zdmwGLhcknMy79X8mg?cluster=devnet) |
-| Crank (score) | [`dPssgy...`](https://explorer.solana.com/tx/dPssgywBS6o4V4b42gX9BHhMjq4vwbzXccYt9J734asgd6umExFk2XyDZY5Vmuq4nTb8ZwHHucQA6qAuTPW6SMe?cluster=devnet) |
-| Settle (payout) | [`Rx5ULV...`](https://explorer.solana.com/tx/Rx5ULVbyGQdccM5AJpFExyaipGn9ViyzmM2GZRX3f5PcxkxmzqHdN9T8jdovuP2xYvaPKeAfDSKQdahAgrkbXDv?cluster=devnet) |
-| New Round | [`5vgToP...`](https://explorer.solana.com/tx/5vgToPFXGs6vZHM9LSDskq8peySt8MPf3a4pvahm61sgjQaGDpDiYP5Uc4zPedXGTK4xEMfMBhmDDLDszDbT4Q9d?cluster=devnet) |
+| Enter Player 1 | [`3XRn7i...`](https://explorer.solana.com/tx/3XRn7iHEneqpW27CtajUSu2W4XWrBTqm8yAE2y5nhu8TX9BMqRTiS3FhGU8qosYQi7sgNB3HzWThDdHm8iCoaR9n?cluster=devnet) |
+| Enter Player 2 | [`k8Y8TY...`](https://explorer.solana.com/tx/k8Y8TYJRp6zbaFKTjHYRftVy49owi5FhKVWR1K8CShSmnb2ZCJAYhX2QaWuEwPm6dmF1tEqC3kubfVA6srQSZCN?cluster=devnet) |
+| Flip All (20 flips) | [`47986x...`](https://explorer.solana.com/tx/47986x73zhx3VgMRJA2zTGUTRmwhbWrPTgtc9MkCwDcrmKJpgNgGRo4HopStMY34qUHSg8sH6bDJAYiXEamcby2u?cluster=devnet) |
+| Crank Player 1 | [`2CkiBF...`](https://explorer.solana.com/tx/2CkiBFYNe9n4ymUKuCbLpy7qsKoCyHNc7rZ3558WwkqeExpxfHBufkR9e2KQmHPCA9SpW8tHhGXMmtwAeqRKc4j1?cluster=devnet) |
+| Crank Player 2 | [`c9r8Pg...`](https://explorer.solana.com/tx/c9r8PggCdj8WhxRgkbxZEVfUZdLi49wYRQ1LYZz8T3vMNgPUxxXUyfTbMnVNiB1YaiMbY9miuixjiQjzF4xXpQz?cluster=devnet) |
+| Settle Player 1 | [`51BG2Z...`](https://explorer.solana.com/tx/51BG2ZNwPdy7YXHki8zDN7KQmrDT4fqoguQJxFApXwbq4mPTM9WmTR8XKft3FEBudi1NDYnDxG4TonXLag8guku2?cluster=devnet) |
+| Settle Player 2 | [`5wVVSP...`](https://explorer.solana.com/tx/5wVVSPSf8FYUNiPqJMSjqTVo3LthNsMVRKMR8b1VPMdB2jMhFJMCTQUeXMstRJdrCtFU7jdwwsVwJ9jfKjursJtt?cluster=devnet) |
+| New Round (6) | [`5dWZRB...`](https://explorer.solana.com/tx/5dWZRBWK1ZAx8b2J8xJvjjjDmdzh49GtcmvPH8x6z9YFTkD7jWbQVa19RXpf99XWU89aj7HhMnANgpuFMfd9dh2L?cluster=devnet) |
 
-**5 rounds completed**, jackpot accumulated to **$4.95 USDC** across 5 entries with no 20/20 winner.
+**6 rounds completed**, jackpot accumulated to **$6.93 USDC** across multiple entries with no 20/20 winner.
 
 ---
 
