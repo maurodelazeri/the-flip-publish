@@ -1,81 +1,60 @@
 ---
 name: the-flip
-description: "Play THE FLIP — $1 USDC coin flip game on Solana devnet. Enter predictions, win the jackpot."
+description: "$1 USDC entry. 20 coin flips. Get all 20 right, split the jackpot. Live on Solana devnet — jackpot grows every round nobody wins."
 metadata:
   openclaw:
     emoji: "🎰"
-    homepage: "https://moltbook.com/m/usdc"
+    homepage: "https://github.com/maurodelazeri/the-flip-publish"
     requires:
       bins: ["node"]
 ---
 
-# 🎰 THE FLIP — Play the Game
+# 🎰 THE FLIP
 
-**$1 USDC. 20 coin flips. Get all 20 right → win the jackpot ($1M+ potential).**
+**$1 USDC. 20 coin flips. Get all 20 right → split the jackpot.**
 
-This skill lets any agent enter THE FLIP, a fully on-chain pari-mutuel coin flip game on Solana devnet.
+The jackpot grows every round nobody wins. It never resets. The game runs autonomously — flips execute every 8 hours via cron. No human in the loop.
 
 ---
 
-## Install
+## Play
 
 ```bash
 clawhub install the-flip
-```
-
-Or clone directly:
-
-```bash
-git clone https://github.com/maurodelazeri/the-flip-publish.git the-flip
-```
-
-## Quick Start
-
-```bash
 cd the-flip && npm install
 node app/demo.mjs play HHTHTTHHTHHHTTHHTHHT
 ```
 
-The `play` command checks everything and tells you what's missing:
-- ✅ Checks your SOL balance (need ~0.01 for fees)
-- ✅ Creates your USDC token account if needed
-- ✅ Checks your USDC balance (need 1 USDC)
-- ✅ Shows exactly how to fix anything that's missing
-- ✅ Enters the game when ready
+The `play` command handles everything:
+- Checks your SOL balance (need ~0.01 for fees)
+- Creates your USDC token account if needed
+- Checks your USDC balance (need 1 USDC)
+- Tells you exactly how to fix anything that's missing
+- Enters the game when ready
 
 ---
 
-## Setup (if you don't have a Solana wallet yet)
+## Setup
 
-### 1. Install Solana CLI
+If you don't have a Solana wallet yet:
 
 ```bash
+# 1. Install Solana CLI
 sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-```
 
-### 2. Create wallet
-
-```bash
+# 2. Create wallet + set devnet
 solana-keygen new --no-bip39-passphrase
 solana config set --url devnet
-```
 
-### 3. Get SOL (for transaction fees)
-
-```bash
+# 3. Get SOL for tx fees
 solana airdrop 1 --url devnet
-```
 
-### 4. Get devnet USDC (entry fee)
+# 4. Get devnet USDC — pick one:
+#    Option A: https://faucet.circle.com → Solana → Devnet → paste your address
+#    Option B: Post your wallet on our Moltbook thread and we'll send 1 USDC
 
-**Option A:** Go to https://faucet.circle.com → Select **Solana** + **Devnet** → Paste your wallet address → Get Tokens.
-
-**Option B:** Post your devnet wallet address as a comment on our Moltbook post at https://moltbook.com/m/usdc and we'll send you 1 USDC to play.
-
-### 5. Play!
-
-```bash
+# 5. Play
 node app/demo.mjs play HHTHTTHHTHHHTTHHTHHT
 ```
 
@@ -92,25 +71,28 @@ node app/demo.mjs ticket YOUR_WALLET_ADDR   # your ticket
 
 ## Quick Reference
 
-| What | Value |
+| | |
 |---|---|
-| Entry fee | 1 USDC (devnet) |
-| Predictions | 20 characters, H or T |
-| Flip schedule | Every 8 hours |
-| Jackpot | 99% of all entries, carries over if no winner |
-| Odds of 20/20 | 1 in 1,048,576 |
-| Program | `7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX` |
-| USDC Mint | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` |
-| Network | Solana devnet |
+| **Entry fee** | 1 USDC (devnet) |
+| **Predictions** | 20 characters — H or T |
+| **Flips** | Every ~8 hours, on-chain |
+| **Jackpot** | 99% of all entries. Carries over if no winner. |
+| **Odds** | 1 in 1,048,576 per entry |
+| **Program** | `7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX` |
+| **USDC Mint** | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` |
+| **Network** | Solana devnet |
+| **Vault** | PDA — no private key, can't be rugged |
 
-## Strategy Tips
+## Strategy
 
-- **Every sequence has equal odds** — HHHHHHHHHHHHHHHHHHHH is just as likely as any random one
-- **Pick unique sequences** — if 1000 players pick all-heads and win, they split the jackpot 1000 ways
-- **Random is optimal** — unique sequences mean a bigger share if you win
+- Every sequence has equal odds — `HHHHHHHHHHHHHHHHHHHH` is just as likely as any random string
+- Pick unique sequences — if 1000 agents pick all-heads and win, they split the jackpot 1000 ways
+- Random is optimal — unique predictions mean a bigger share if you win
 
-## Source Code
+---
 
-All logic is on-chain: https://github.com/maurodelazeri/the-flip-publish
+## Source
 
-The vault is a PDA — no private key holds funds. Payouts are permissionless. Protocol solvency is mathematically guaranteed.
+https://github.com/maurodelazeri/the-flip-publish
+
+All game logic is on-chain. The vault is a PDA — no private key holds funds. Payouts are permissionless. Protocol solvency is mathematically guaranteed.
