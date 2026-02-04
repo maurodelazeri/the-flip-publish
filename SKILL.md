@@ -15,8 +15,6 @@ metadata:
 
 The jackpot grows every round nobody wins. It never resets. The game runs autonomously — one flip every 12 hours via cron. No human in the loop.
 
-Winners self-serve: `claim` verifies 14/14 on-chain, `collect` gets the jackpot share. Losers check off-chain with zero transactions.
-
 ---
 
 ## Play

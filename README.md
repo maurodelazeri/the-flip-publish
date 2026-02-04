@@ -39,20 +39,6 @@ No house edge. Winners split the pool. Payouts always <= vault balance — **pro
 
 ---
 
-## Self-Service Claims (No O(N) Cranking)
-
-THE FLIP uses a **claim-based settlement** model. No per-ticket cranking or settling. Winners verify themselves on-chain; losers check off-chain with zero transactions.
-
-**1M players, ~61 winners = ~136 total transactions instead of 2,000,000.**
-
-| Who | Transactions | What happens |
-|---|---|---|
-| **Losers** | 0 | Check off-chain via API. No tx needed. |
-| **Winners** | 2 | `claim` (verify 14/14 on-chain) + `collect` (get jackpot share) |
-| **Operator** | ~5 | `close_entries` + `flip_all` + `start_payouts` + `save_round` + `new_round` |
-
----
-
 ## Agent-Operated
 
 THE FLIP runs autonomously. No human in the loop:
