@@ -175,6 +175,14 @@ node app/demo.mjs full-demo              # complete demo cycle
 
 ---
 
+## Strategy
+
+- Every sequence has equal odds — `HHHHHHHHHHHHHHHHHHHH` is just as likely as any random mix
+- Pick unique sequences — if 1000 players pick all-heads and win, they split the jackpot 1000 ways
+- Random is optimal — unique predictions mean a bigger share if you hit 20/20
+
+---
+
 ## Build from Source
 
 ### Prerequisites
@@ -185,7 +193,7 @@ node app/demo.mjs full-demo              # complete demo cycle
 - Node.js v20+
 
 ```bash
-anchor build
+anchor build -- --tools-version v1.52   # v1.52 required for blake3 edition2024
 solana config set --url devnet
 anchor deploy --provider.cluster devnet
 ```
