@@ -31,6 +31,7 @@ import path from 'path';
 const DEVNET_URL = 'https://api.devnet.solana.com';
 const USDC_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
 const PROGRAM_ID = new PublicKey('7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX');
+const AUTHORITY = new PublicKey('89FeAXomb6QvvQ5CQ1cjouRAP3EDu3ZyrV13Xt2HNbLa');
 const TOTAL_FLIPS = 20;
 
 // Load IDL
@@ -113,8 +114,10 @@ async function main() {
   const idl = JSON.parse(fs.readFileSync(IDL_PATH, 'utf8'));
   const program = new anchor.Program(idl, provider);
 
-  const [gamePDA] = getGamePDA(wallet.publicKey);
-  const [vaultPDA] = getVaultPDA(wallet.publicKey);
+  // Game PDA is always derived from the AUTHORITY, not the current wallet.
+  // This lets any player use their own wallet to interact with the same game.
+  const [gamePDA] = getGamePDA(AUTHORITY);
+  const [vaultPDA] = getVaultPDA(AUTHORITY);
 
   switch (cmd) {
     case 'init': {
