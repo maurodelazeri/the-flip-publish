@@ -6,12 +6,9 @@ declare_id!("7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX");
 // Game constants
 const ENTRY_FEE: u64 = 1_000_000; // 1 USDC (6 decimals)
 const TOTAL_FLIPS: u8 = 14;
-const OPERATOR_FEE_BPS: u64 = 100;   // 1% to operator (covers Solana transaction fees)
-const MILESTONE_POOL_BPS: u64 = 0;    // 0% to milestone (disabled — all prize money goes to jackpot)
+const OPERATOR_FEE_BPS: u64 = 100; // 1% to operator
 const BPS_BASE: u64 = 10000;
 // Jackpot gets the rest: 99%
-const MILESTONE_TIERS: [u8; 5] = [10, 11, 12, 13, 14];
-const TIER_SPLIT_BPS: u64 = 2000; // Each tier gets 20% of milestone pool
 
 #[program]
 pub mod the_flip {
@@ -27,14 +24,14 @@ pub mod the_flip {
         game.vault_bump = ctx.bumps.vault;
         game.current_flip = 0;
         game.flip_results = [0u8; 14];
-        game.milestone_pool = 0;
         game.jackpot_pool = 0;
         game.operator_pool = 0;
         game.total_entries = 0;
-        game.tickets_alive = 0;
-        game.tier_counts = [0u32; 6];
+        game.winners_count = 0;
+        game.collected_count = 0;
         game.game_over = false;
         game.accepting_entries = true;
+        game.payouts_started = false;
         game.round = 0;
 
         msg!("THE FLIP initialized. Vault: {}", game.vault);
@@ -64,15 +61,12 @@ pub mod the_flip {
         );
         token::transfer(cpi_ctx, ENTRY_FEE)?;
 
-        // Split into pools: 1% operator, 0% milestone, 99% jackpot
+        // Split into pools: 1% operator, 99% jackpot
         let operator_amount = ENTRY_FEE * OPERATOR_FEE_BPS / BPS_BASE;
-        let milestone_amount = ENTRY_FEE * MILESTONE_POOL_BPS / BPS_BASE;
-        let jackpot_amount = ENTRY_FEE - operator_amount - milestone_amount;
+        let jackpot_amount = ENTRY_FEE - operator_amount;
         game.operator_pool += operator_amount;
-        game.milestone_pool += milestone_amount;
         game.jackpot_pool += jackpot_amount;
         game.total_entries += 1;
-        game.tickets_alive += 1;
 
         // Initialize ticket
         let ticket = &mut ctx.accounts.ticket;
@@ -80,11 +74,8 @@ pub mod the_flip {
         ticket.player = ctx.accounts.player.key();
         ticket.round = game.round;
         ticket.predictions = predictions;
-        ticket.alive = true;
-        ticket.score = 0;
-        ticket.last_cranked_flip = 0;
-        ticket.died_at_flip = 0;
-        ticket.settled = false;
+        ticket.winner = false;
+        ticket.collected = false;
         ticket.bump = ctx.bumps.ticket;
 
         msg!(
@@ -163,126 +154,88 @@ pub mod the_flip {
         Ok(())
     }
 
-    /// Crank a ticket: check predictions against flips. Permissionless.
-    pub fn crank(ctx: Context<Crank>) -> Result<()> {
-        let game = &mut ctx.accounts.game;
-        let ticket = &mut ctx.accounts.ticket;
-
-        require!(game.current_flip > 0, FlipError::NoFlipsYet);
-        require!(ticket.alive, FlipError::TicketDead);
-        require!(
-            ticket.last_cranked_flip < game.current_flip,
-            FlipError::AlreadyCranked
-        );
-
-        let start_flip = ticket.last_cranked_flip as usize;
-        let end_flip = game.current_flip as usize;
-
-        for i in start_flip..end_flip {
-            let predicted = ticket.predictions[i];
-            let actual = game.flip_results[i];
-
-            if predicted == actual {
-                ticket.score = (i + 1) as u8;
-            } else {
-                ticket.alive = false;
-                ticket.died_at_flip = (i + 1) as u8;
-                game.tickets_alive -= 1;
-
-                // Record ONLY the highest qualifying tier (not cumulative)
-                let score = ticket.score;
-                let mut best_idx: Option<usize> = None;
-                for (idx, &tier) in MILESTONE_TIERS.iter().enumerate() {
-                    if score >= tier {
-                        best_idx = Some(idx);
-                    }
-                }
-                if let Some(idx) = best_idx {
-                    game.tier_counts[idx] += 1;
-                }
-
-                msg!("Ticket ELIMINATED at flip {}. Score: {}", i + 1, ticket.score);
-                break;
-            }
-        }
-
-        ticket.last_cranked_flip = game.current_flip;
-
-        // If game over and ticket survived all 14 = jackpot
-        if game.game_over && ticket.alive && ticket.score == TOTAL_FLIPS {
-            game.tier_counts[5] += 1;
-            msg!("JACKPOT WINNER: {} with 14/14!", ticket.player);
-        }
-
-        Ok(())
-    }
-
-    /// Settle a ticket: pay winnings from the vault. Permissionless.
-    pub fn settle(ctx: Context<Settle>) -> Result<()> {
+    /// Winner claims their ticket. Verifies 14/14 match on-chain. Permissionless.
+    pub fn claim(ctx: Context<Claim>) -> Result<()> {
         let game = &mut ctx.accounts.game;
         let ticket = &mut ctx.accounts.ticket;
 
         require!(game.game_over, FlipError::GameNotOver);
-        require!(ticket.last_cranked_flip == TOTAL_FLIPS, FlipError::NotFullyCranked);
-        require!(!ticket.settled, FlipError::AlreadySettled);
+        require!(!game.payouts_started, FlipError::ClaimPhaseOver);
+        require!(!ticket.winner, FlipError::AlreadyClaimed);
 
-        let score = ticket.score;
-        let mut payout: u64 = 0;
-
-        if score >= TOTAL_FLIPS {
-            // Jackpot — winner takes all (split if multiple)
-            let winners = game.tier_counts[5] as u64;
-            if winners > 0 {
-                payout = game.jackpot_pool / winners;
-            }
-        } else {
-            // Highest qualifying milestone tier
-            let mut best_tier_idx: Option<usize> = None;
-            for (idx, &tier) in MILESTONE_TIERS.iter().enumerate() {
-                if score >= tier {
-                    best_tier_idx = Some(idx);
-                }
-            }
-
-            if let Some(idx) = best_tier_idx {
-                let tier_pool = game.milestone_pool * TIER_SPLIT_BPS / BPS_BASE;
-                let winners = game.tier_counts[idx] as u64;
-                if winners > 0 {
-                    payout = tier_pool / winners;
-                }
-            }
-        }
-
-        if payout > 0 {
-            // PDA signer seeds for vault
-            let authority_key = game.authority;
-            let seeds = &[
-                b"vault" as &[u8],
-                authority_key.as_ref(),
-                &[game.vault_bump],
-            ];
-            let signer_seeds = &[&seeds[..]];
-
-            let cpi_ctx = CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.vault.to_account_info(),
-                    to: ctx.accounts.player_token_account.to_account_info(),
-                    authority: ctx.accounts.vault.to_account_info(),
-                },
-                signer_seeds,
+        // Verify all 14 predictions match flip results
+        for i in 0..TOTAL_FLIPS as usize {
+            require!(
+                ticket.predictions[i] == game.flip_results[i],
+                FlipError::NotAWinner
             );
-            token::transfer(cpi_ctx, payout)?;
-
-            msg!("Payout: {} USDC units to {}", payout, ticket.player);
         }
 
-        // Decrement alive count when settling a surviving ticket (jackpot winner)
-        if ticket.alive {
-            game.tickets_alive -= 1;
-        }
+        ticket.winner = true;
+        game.winners_count += 1;
 
-        ticket.settled = true;
+        msg!("WINNER claimed: {} (winner #{})", ticket.player, game.winners_count);
+        Ok(())
+    }
+
+    /// Authority closes the claim window and starts the payout phase.
+    pub fn start_payouts(ctx: Context<AuthorityOnly>) -> Result<()> {
+        let game = &mut ctx.accounts.game;
+
+        require!(game.game_over, FlipError::GameNotOver);
+        require!(!game.payouts_started, FlipError::PayoutsAlreadyStarted);
+
+        game.payouts_started = true;
+
+        msg!(
+            "Payouts started. {} winners to collect from {} jackpot.",
+            game.winners_count,
+            game.jackpot_pool
+        );
+        Ok(())
+    }
+
+    /// Winner collects their share of the jackpot. Permissionless.
+    pub fn collect(ctx: Context<Collect>) -> Result<()> {
+        let game = &mut ctx.accounts.game;
+        let ticket = &mut ctx.accounts.ticket;
+
+        require!(game.payouts_started, FlipError::PayoutsNotStarted);
+        require!(ticket.winner, FlipError::NotAWinner);
+        require!(!ticket.collected, FlipError::AlreadyCollected);
+
+        let payout = game.jackpot_pool / game.winners_count as u64;
+
+        // PDA signer seeds for vault
+        let authority_key = game.authority;
+        let seeds = &[
+            b"vault" as &[u8],
+            authority_key.as_ref(),
+            &[game.vault_bump],
+        ];
+        let signer_seeds = &[&seeds[..]];
+
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.vault.to_account_info(),
+                to: ctx.accounts.player_token_account.to_account_info(),
+                authority: ctx.accounts.vault.to_account_info(),
+            },
+            signer_seeds,
+        );
+        token::transfer(cpi_ctx, payout)?;
+
+        ticket.collected = true;
+        game.collected_count += 1;
+
+        msg!(
+            "Payout: {} USDC units to {} ({}/{})",
+            payout,
+            ticket.player,
+            game.collected_count,
+            game.winners_count
+        );
         Ok(())
     }
 
@@ -321,27 +274,27 @@ pub mod the_flip {
         let game = &mut ctx.accounts.game;
         require!(game.game_over, FlipError::GameNotOver);
 
-        // Safety: all alive tickets must be settled before starting a new round.
-        // This prevents the authority from zeroing the jackpot before winners can claim.
-        require!(game.tickets_alive == 0, FlipError::UnsettledTickets);
+        // All winners must have collected (or no winners at all)
+        require!(
+            game.winners_count == 0 || game.collected_count == game.winners_count,
+            FlipError::UncollectedWinners
+        );
 
         // Jackpot carries over if no one won 14/14
-        if game.tier_counts[5] > 0 {
+        if game.winners_count > 0 {
             game.jackpot_pool = 0; // Was paid out
         }
         // else: jackpot_pool stays — accumulates into next round!
-
-        // Milestone pool resets (paid out or forfeited each round)
-        game.milestone_pool = 0;
 
         // Reset game state for new round
         game.current_flip = 0;
         game.flip_results = [0u8; 14];
         game.total_entries = 0;
-        game.tickets_alive = 0;
-        game.tier_counts = [0u32; 6];
+        game.winners_count = 0;
+        game.collected_count = 0;
         game.game_over = false;
         game.accepting_entries = true;
+        game.payouts_started = false;
         game.round += 1;
 
         msg!("New round started: {}. Jackpot pool: {}", game.round, game.jackpot_pool);
@@ -349,7 +302,6 @@ pub mod the_flip {
     }
 
     /// Save round results before new_round wipes the state. Authority only.
-    /// Call after all tickets are settled, before new_round.
     pub fn save_round(ctx: Context<SaveRound>) -> Result<()> {
         let game = &ctx.accounts.game;
         let result = &mut ctx.accounts.round_result;
@@ -361,13 +313,13 @@ pub mod the_flip {
         result.flip_results = game.flip_results;
         result.total_entries = game.total_entries;
         result.jackpot_pool = game.jackpot_pool;
-        result.winners = game.tier_counts[5];
+        result.winners = game.winners_count;
         result.timestamp = Clock::get()?.unix_timestamp;
         result.bump = ctx.bumps.round_result;
 
         msg!(
             "Round {} saved. Entries: {}, Winners: {}, Jackpot: {}",
-            game.round, game.total_entries, game.tier_counts[5], game.jackpot_pool
+            game.round, game.total_entries, game.winners_count, game.jackpot_pool
         );
         Ok(())
     }
@@ -488,8 +440,8 @@ pub struct Flip<'info> {
 }
 
 #[derive(Accounts)]
-pub struct Crank<'info> {
-    pub cranker: Signer<'info>,
+pub struct Claim<'info> {
+    pub claimer: Signer<'info>,
 
     #[account(
         mut,
@@ -506,8 +458,8 @@ pub struct Crank<'info> {
 }
 
 #[derive(Accounts)]
-pub struct Settle<'info> {
-    pub settler: Signer<'info>,
+pub struct Collect<'info> {
+    pub collector: Signer<'info>,
 
     #[account(
         mut,
@@ -637,14 +589,14 @@ pub struct Game {
     pub vault_bump: u8,
     pub current_flip: u8,
     pub flip_results: [u8; 14],
-    pub milestone_pool: u64,
     pub jackpot_pool: u64,
     pub operator_pool: u64,
     pub total_entries: u32,
-    pub tickets_alive: u32,
-    pub tier_counts: [u32; 6],
+    pub winners_count: u32,
+    pub collected_count: u32,
     pub game_over: bool,
     pub accepting_entries: bool,
+    pub payouts_started: bool,
     pub round: u8,
 }
 
@@ -655,11 +607,8 @@ pub struct Ticket {
     pub player: Pubkey,
     pub round: u8,
     pub predictions: [u8; 14],
-    pub alive: bool,
-    pub score: u8,
-    pub last_cranked_flip: u8,
-    pub died_at_flip: u8,
-    pub settled: bool,
+    pub winner: bool,
+    pub collected: bool,
     pub bump: u8,
 }
 
@@ -670,7 +619,7 @@ pub struct RoundResult {
     pub round: u8,              // 1  — which round
     pub flip_results: [u8; 14], // 14 — the coin flip outcomes
     pub total_entries: u32,     // 4  — how many players entered
-    pub jackpot_pool: u64,      // 8  — jackpot at end of round (0 if winner paid out, carries if not)
+    pub jackpot_pool: u64,      // 8  — jackpot at end of round
     pub winners: u32,           // 4  — number of 14/14 winners
     pub timestamp: i64,         // 8  — when the round ended
     pub bump: u8,               // 1  — PDA bump
@@ -694,16 +643,18 @@ pub enum FlipError {
     NoEntries,
     #[msg("Unauthorized")]
     Unauthorized,
-    #[msg("No flips yet")]
-    NoFlipsYet,
-    #[msg("Ticket is dead")]
-    TicketDead,
-    #[msg("Already cranked")]
-    AlreadyCranked,
-    #[msg("Not fully cranked")]
-    NotFullyCranked,
-    #[msg("Already settled")]
-    AlreadySettled,
+    #[msg("Not a 14/14 winner")]
+    NotAWinner,
+    #[msg("Already claimed as winner")]
+    AlreadyClaimed,
+    #[msg("Already collected payout")]
+    AlreadyCollected,
+    #[msg("Payouts have not started yet")]
+    PayoutsNotStarted,
+    #[msg("Payouts already started")]
+    PayoutsAlreadyStarted,
+    #[msg("Claim phase is over — payouts have started")]
+    ClaimPhaseOver,
     #[msg("Game not over")]
     GameNotOver,
     #[msg("Ticket/game mismatch")]
@@ -712,6 +663,6 @@ pub enum FlipError {
     PlayerMismatch,
     #[msg("Insufficient operator fees")]
     InsufficientFees,
-    #[msg("All tickets must be settled before starting a new round")]
-    UnsettledTickets,
+    #[msg("All winners must collect before starting a new round")]
+    UncollectedWinners,
 }

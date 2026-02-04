@@ -8,6 +8,55 @@
   },
   "instructions": [
     {
+      "name": "claim",
+      "docs": [
+        "Winner claims their ticket. Verifies 14/14 match on-chain. Permissionless."
+      ],
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "claimer",
+          "signer": true
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game.authority",
+                "account": "Game"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ticket",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "close_entries",
       "docs": [
         "Close entries manually (authority only)."
@@ -98,23 +147,23 @@
       "args": []
     },
     {
-      "name": "crank",
+      "name": "collect",
       "docs": [
-        "Crank a ticket: check predictions against flips. Permissionless."
+        "Winner collects their share of the jackpot. Permissionless."
       ],
       "discriminator": [
-        0,
-        232,
-        3,
-        195,
-        124,
-        117,
-        105,
-        53
+        208,
+        47,
+        194,
+        155,
+        17,
+        98,
+        82,
+        236
       ],
       "accounts": [
         {
-          "name": "cranker",
+          "name": "collector",
           "signer": true
         },
         {
@@ -142,6 +191,21 @@
         {
           "name": "ticket",
           "writable": true
+        },
+        {
+          "name": "player"
+        },
+        {
+          "name": "player_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
       "args": []
@@ -442,8 +506,7 @@
     {
       "name": "save_round",
       "docs": [
-        "Save round results before new_round wipes the state. Authority only.",
-        "Call after all tickets are settled, before new_round."
+        "Save round results before new_round wipes the state. Authority only."
       ],
       "discriminator": [
         92,
@@ -493,23 +556,23 @@
       "args": []
     },
     {
-      "name": "settle",
+      "name": "start_payouts",
       "docs": [
-        "Settle a ticket: pay winnings from the vault. Permissionless."
+        "Authority closes the claim window and starts the payout phase."
       ],
       "discriminator": [
-        175,
-        42,
-        185,
-        87,
-        144,
-        131,
-        102,
-        212
+        229,
+        197,
+        28,
+        55,
+        216,
+        31,
+        218,
+        73
       ],
       "accounts": [
         {
-          "name": "settler",
+          "name": "authority",
           "signer": true
         },
         {
@@ -533,25 +596,6 @@
               }
             ]
           }
-        },
-        {
-          "name": "ticket",
-          "writable": true
-        },
-        {
-          "name": "player"
-        },
-        {
-          "name": "player_token_account",
-          "writable": true
-        },
-        {
-          "name": "vault",
-          "writable": true
-        },
-        {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
       "args": []
@@ -698,53 +742,58 @@
     },
     {
       "code": 6007,
-      "name": "NoFlipsYet",
-      "msg": "No flips yet"
+      "name": "NotAWinner",
+      "msg": "Not a 14/14 winner"
     },
     {
       "code": 6008,
-      "name": "TicketDead",
-      "msg": "Ticket is dead"
+      "name": "AlreadyClaimed",
+      "msg": "Already claimed as winner"
     },
     {
       "code": 6009,
-      "name": "AlreadyCranked",
-      "msg": "Already cranked"
+      "name": "AlreadyCollected",
+      "msg": "Already collected payout"
     },
     {
       "code": 6010,
-      "name": "NotFullyCranked",
-      "msg": "Not fully cranked"
+      "name": "PayoutsNotStarted",
+      "msg": "Payouts have not started yet"
     },
     {
       "code": 6011,
-      "name": "AlreadySettled",
-      "msg": "Already settled"
+      "name": "PayoutsAlreadyStarted",
+      "msg": "Payouts already started"
     },
     {
       "code": 6012,
+      "name": "ClaimPhaseOver",
+      "msg": "Claim phase is over — payouts have started"
+    },
+    {
+      "code": 6013,
       "name": "GameNotOver",
       "msg": "Game not over"
     },
     {
-      "code": 6013,
+      "code": 6014,
       "name": "TicketGameMismatch",
       "msg": "Ticket/game mismatch"
     },
     {
-      "code": 6014,
+      "code": 6015,
       "name": "PlayerMismatch",
       "msg": "Player mismatch"
     },
     {
-      "code": 6015,
+      "code": 6016,
       "name": "InsufficientFees",
       "msg": "Insufficient operator fees"
     },
     {
-      "code": 6016,
-      "name": "UnsettledTickets",
-      "msg": "All tickets must be settled before starting a new round"
+      "code": 6017,
+      "name": "UncollectedWinners",
+      "msg": "All winners must collect before starting a new round"
     }
   ],
   "types": [
@@ -787,10 +836,6 @@
             }
           },
           {
-            "name": "milestone_pool",
-            "type": "u64"
-          },
-          {
             "name": "jackpot_pool",
             "type": "u64"
           },
@@ -803,17 +848,12 @@
             "type": "u32"
           },
           {
-            "name": "tickets_alive",
+            "name": "winners_count",
             "type": "u32"
           },
           {
-            "name": "tier_counts",
-            "type": {
-              "array": [
-                "u32",
-                6
-              ]
-            }
+            "name": "collected_count",
+            "type": "u32"
           },
           {
             "name": "game_over",
@@ -821,6 +861,10 @@
           },
           {
             "name": "accepting_entries",
+            "type": "bool"
+          },
+          {
+            "name": "payouts_started",
             "type": "bool"
           },
           {
@@ -902,23 +946,11 @@
             }
           },
           {
-            "name": "alive",
+            "name": "winner",
             "type": "bool"
           },
           {
-            "name": "score",
-            "type": "u8"
-          },
-          {
-            "name": "last_cranked_flip",
-            "type": "u8"
-          },
-          {
-            "name": "died_at_flip",
-            "type": "u8"
-          },
-          {
-            "name": "settled",
+            "name": "collected",
             "type": "bool"
           },
           {

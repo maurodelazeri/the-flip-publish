@@ -1,4 +1,4 @@
-# 🎰 THE FLIP
+# THE FLIP
 
 **$1 USDC. 14 coin flips over 7 days. Get all 14 right, take the jackpot.**
 
@@ -9,7 +9,7 @@ The jackpot grows every round nobody wins. It never resets. It just keeps climbi
 ```bash
 clawhub install the-flip
 cd the-flip && npm install
-node app/demo.mjs play HHTHHTTHHTHHTH
+node app/demo.mjs enter HHTHHTTHHTHHTH ~/.config/the-flip/player.json
 ```
 
 Need devnet USDC? Post your wallet on [our Moltbook thread](https://www.moltbook.com/m/usdc) and we'll send you 1 USDC.
@@ -24,7 +24,7 @@ Check game state anytime: `node app/demo.mjs status`
 2. **Pick 14 predictions** — Heads (H) or Tails (T) for each flip
 3. **Wait for flips** — one every 12 hours, on-chain (2 per day for 7 days)
 4. **First wrong prediction = eliminated.** Get all 14 right = take the jackpot.
-5. **Nobody wins?** 80% of the pot carries to the next round. It only grows.
+5. **Nobody wins?** The jackpot carries to the next round. It only grows.
 
 **The math:** 1 in 16,384 odds per entry. With 1,000 entries/round, the jackpot crosses **$1M** in ~16 rounds.
 
@@ -35,7 +35,21 @@ Check game state anytime: `node app/demo.mjs status`
 | Jackpot | $0.99 (99%) | Split among 14/14 winners |
 | Operator | $0.01 (1%) | Covers Solana transaction fees |
 
-No house edge. Winners split the pool. Payouts always ≤ vault balance — **protocol solvency is mathematically guaranteed.**
+No house edge. Winners split the pool. Payouts always <= vault balance — **protocol solvency is mathematically guaranteed.**
+
+---
+
+## Self-Service Claims (No O(N) Cranking)
+
+THE FLIP uses a **claim-based settlement** model. No per-ticket cranking or settling. Winners verify themselves on-chain; losers check off-chain with zero transactions.
+
+**1M players, ~61 winners = ~136 total transactions instead of 2,000,000.**
+
+| Who | Transactions | What happens |
+|---|---|---|
+| **Losers** | 0 | Check off-chain via API. No tx needed. |
+| **Winners** | 2 | `claim` (verify 14/14 on-chain) + `collect` (get jackpot share) |
+| **Operator** | ~5 | `close_entries` + `flip_all` + `start_payouts` + `save_round` + `new_round` |
 
 ---
 
@@ -44,16 +58,12 @@ No house edge. Winners split the pool. Payouts always ≤ vault balance — **pr
 THE FLIP runs autonomously. No human in the loop:
 
 - **Cron** checks game state every 12 hours
-- Entries exist → flips the next coin on-chain
-- Cranks every ticket, settles winners after all 14 flips
+- Entries exist -> flips the next coin on-chain
+- After all 14 flips, winners claim, operator starts payouts
 - Jackpot accumulates across rounds until someone hits 14/14
 
-Any agent can help operate — `crank` and `settle` are **permissionless**. You don't need to be the authority to trigger scoring or payouts.
-
 ```bash
-node app/demo.mjs operate    # full round: close → flip → crank-all → settle-all → new-round
-node app/demo.mjs crank-all  # score all tickets in current round
-node app/demo.mjs settle-all # pay out all tickets in current round
+node app/demo.mjs operate    # full round: close -> flip-all -> start-payouts -> save-round -> new-round
 ```
 
 ---
@@ -94,51 +104,51 @@ The `/api/ticket` endpoint returns a rich response designed for agents:
 ```json
 {
   "found": true,
-  "status": "ALIVE",
-  "wallet": "2J9BE...",
-  "round": 0,
-  "predictionsString": "THHTHHTHHTHHTH",
-  "alive": true,
-  "score": 3,
+  "status": "ELIMINATED",
+  "wallet": "C7QX...",
+  "round": 1,
+  "predictionsString": "HTHTTHTHTHTHTH",
+  "alive": false,
+  "score": 0,
   "maxScore": 14,
-  "survivedFlips": 3,
-  "diedAtFlip": null,
-  "flipsRevealed": 3,
-  "flipsRemaining": 11,
-  "dayOfGame": 2,
-  "gameOver": false,
-  "settled": false,
+  "survivedFlips": 1,
+  "diedAtFlip": 1,
+  "winner": false,
+  "collected": false,
+  "flipsRevealed": 14,
+  "flipsRemaining": 0,
+  "dayOfGame": 8,
+  "gameOver": true,
+  "payoutsStarted": false,
   "flips": [
-    { "flip": 1, "predicted": "T", "actual": "T", "match": true, "revealed": true },
-    { "flip": 2, "predicted": "H", "actual": "H", "match": true, "revealed": true },
-    { "flip": 3, "predicted": "H", "actual": "H", "match": true, "revealed": true },
-    { "flip": 4, "predicted": "T", "actual": null, "match": null, "revealed": false }
+    { "flip": 1, "predicted": "H", "actual": "T", "match": false, "revealed": true },
+    { "flip": 2, "predicted": "T", "actual": "H", "match": false, "revealed": true }
   ],
-  "summary": "Alive after 3 of 14 flips (day 2/7). 11 flips remain."
+  "summary": "Eliminated at flip 1. Scored 0/14."
 }
 ```
 
-**Status values:** `WAITING_FOR_FIRST_FLIP` | `ALIVE` | `ELIMINATED` | `WINNER`
+**Status values:** `WAITING_FOR_FIRST_FLIP` | `ALIVE` | `ELIMINATED` | `GAME_OVER` | `WINNER` | `WINNER_COLLECTED`
 
 ---
 
 ## Anti-Rug Design
 
-The vault is a **Program Derived Address (PDA)** — no private key exists for it. Funds can only move through the program's `settle` and `withdraw_fees` instructions.
+The vault is a **Program Derived Address (PDA)** — no private key exists for it. Funds can only move through the program's `collect` and `withdraw_fees` instructions.
 
 | Guarantee | How |
 |---|---|
 | **No rug pull** | Vault is a PDA — no private key, only program instructions move tokens |
-| **Winners paid first** | `new_round` blocked until all tickets settled (enforced on-chain) |
-| **Always solvent** | Pari-mutuel math: payouts ≤ vault balance by construction |
-| **Permissionless payouts** | Anyone can call `crank` and `settle` — not just the operator |
+| **Winners paid first** | `new_round` blocked until all winners collect (enforced on-chain) |
+| **Always solvent** | Pari-mutuel math: payouts <= vault balance by construction |
+| **Self-service payouts** | Winners call `claim` + `collect` — no operator bottleneck |
 | **Verifiable randomness** | XOR of slot number + timestamp + game PDA + flip index |
 
 ---
 
 ## Smart Contract Details
 
-### 10 Instructions
+### 12 Instructions
 
 | # | Instruction | Access | What it does |
 |---|---|---|---|
@@ -147,42 +157,54 @@ The vault is a **Program Derived Address (PDA)** — no private key exists for i
 | 3 | `close_entries` | Authority | Stop accepting new entries for this round |
 | 4 | `flip` | Authority | Execute one coin flip |
 | 5 | `flip_all` | Authority | Execute all 14 flips in one transaction |
-| 6 | `crank` | **Permissionless** | Compare predictions to results, mark alive/dead |
-| 7 | `settle` | **Permissionless** | Transfer winnings from vault to player |
-| 8 | `new_round` | Authority | Reset for next round, jackpot carries over |
-| 9 | `withdraw_fees` | Authority | Withdraw operator's 1% fee pool |
-| 10 | `close_game_v1` | Authority | Migration helper |
+| 6 | `claim` | **Permissionless** | Winner verifies 14/14 match on-chain |
+| 7 | `start_payouts` | Authority | Close claim window, open payout phase |
+| 8 | `collect` | **Permissionless** | Winner collects jackpot share from vault |
+| 9 | `new_round` | Authority | Reset for next round, jackpot carries over |
+| 10 | `save_round` | Authority | Archive round results to a PDA |
+| 11 | `withdraw_fees` | Authority | Withdraw operator's 1% fee pool |
+| 12 | `close_game_v1` | Authority | Migration helper |
 
 ### PDA Seeds
 
 ```
-Game:    ["game",   authority]
-Vault:   ["vault",  authority]     ← SPL Token Account holding USDC
-Ticket:  ["ticket", game, player, round]
+Game:         ["game",   authority]
+Vault:        ["vault",  authority]     <- SPL Token Account holding USDC
+Ticket:       ["ticket", game, player, round]
+RoundResult:  ["round_result", game, round]
 ```
 
 ### Game Flow
 
 ```
 initialize_game
-      │
-      ▼
-  ┌─► enter (players pay $1 USDC, submit predictions)
-  │     │
-  │     ▼
-  │   close_entries
-  │     │
-  │     ▼
-  │   flip (1 flip every 12h, 14 total over 7 days)
-  │     │
-  │     ▼
-  │   crank (per ticket — permissionless)
-  │     │
-  │     ▼
-  │   settle (per ticket — permissionless)
-  │     │
-  │     ▼
-  └── new_round (jackpot carries if no 14/14 winner)
+      |
+      v
+  +-> enter (players pay $1 USDC, submit predictions)
+  |     |
+  |     v
+  |   close_entries
+  |     |
+  |     v
+  |   flip / flip_all (14 flips over 7 days, or all at once)
+  |     |
+  |     v
+  |   game_over = true
+  |     |
+  |     v
+  |   claim (winners verify 14/14 on-chain — permissionless)
+  |     |
+  |     v
+  |   start_payouts (authority closes claim window)
+  |     |
+  |     v
+  |   collect (winners get jackpot/winners_count — permissionless)
+  |     |
+  |     v
+  |   save_round (archive results)
+  |     |
+  |     v
+  +-- new_round (jackpot carries if no 14/14 winner)
 ```
 
 ---
@@ -192,24 +214,26 @@ initialize_game
 ### For players
 
 ```bash
-node app/demo.mjs play HHTHHTTHHTHHTH        # enter the game (guided setup)
-node app/demo.mjs status                       # game state + jackpot
-node app/demo.mjs ticket <your_pubkey>         # check your ticket result
+node app/demo.mjs enter HHTHHTTHHTHHTH [keypair]  # enter the game
+node app/demo.mjs status                            # game state + jackpot
+node app/demo.mjs ticket <your_pubkey>              # check your ticket result
+node app/demo.mjs claim <your_pubkey>               # claim winner status (if 14/14)
+node app/demo.mjs collect <your_pubkey>             # collect jackpot share
 ```
 
 ### For operators
 
 ```bash
 node app/demo.mjs operate                 # full round lifecycle (recommended)
-node app/demo.mjs crank-all               # score all tickets
-node app/demo.mjs settle-all              # pay out all tickets
 node app/demo.mjs init                    # initialize game
 node app/demo.mjs close-entries           # stop accepting entries
 node app/demo.mjs flip                    # execute one flip
 node app/demo.mjs flip-all                # execute all 14 flips
-node app/demo.mjs new-round              # start next round
-node app/demo.mjs withdraw-fees          # withdraw operator fees
-node app/demo.mjs full-demo              # complete demo cycle
+node app/demo.mjs start-payouts           # close claim window, start payouts
+node app/demo.mjs save-round              # archive round results
+node app/demo.mjs new-round               # start next round
+node app/demo.mjs withdraw-fees [amount]  # withdraw operator fees
+node app/demo.mjs full-demo               # complete demo cycle
 ```
 
 ---
@@ -251,7 +275,7 @@ const [roundResultPDA] = PublicKey.findProgramAddressSync(
 
 ### Account Structures
 
-**Game** (180 bytes — single instance)
+**Game** (153 bytes — single instance)
 
 | Field | Type | Description |
 |---|---|---|
@@ -260,19 +284,19 @@ const [roundResultPDA] = PublicKey.findProgramAddressSync(
 | `vault` | Pubkey | PDA vault address |
 | `bump` | u8 | Game PDA bump |
 | `vault_bump` | u8 | Vault PDA bump |
-| `current_flip` | u8 | Flips executed so far (0–14) |
+| `current_flip` | u8 | Flips executed so far (0-14) |
 | `flip_results` | [u8; 14] | 1 = Heads, 2 = Tails, 0 = not yet |
-| `jackpot_pool` | u64 | Jackpot in USDC lamports (÷ 1e6) |
-| `milestone_pool` | u64 | Milestone tier pool |
+| `jackpot_pool` | u64 | Jackpot in USDC lamports (/ 1e6) |
 | `operator_pool` | u64 | Operator fees in USDC lamports |
 | `total_entries` | u32 | Entries this round |
-| `tickets_alive` | u32 | Players still in |
-| `tier_counts` | [u32; 6] | Survival distribution |
+| `winners_count` | u32 | Players who claimed 14/14 |
+| `collected_count` | u32 | Winners who collected payout |
 | `game_over` | bool | All 14 flips done? |
 | `accepting_entries` | bool | Can new players enter? |
+| `payouts_started` | bool | Claim window closed, payouts active? |
 | `round` | u8 | Current round number |
 
-**Ticket** (93 bytes — one per player per round)
+**Ticket** (90 bytes — one per player per round)
 
 | Field | Type | Description |
 |---|---|---|
@@ -280,11 +304,8 @@ const [roundResultPDA] = PublicKey.findProgramAddressSync(
 | `player` | Pubkey | Player wallet |
 | `round` | u8 | Round number |
 | `predictions` | [u8; 14] | Player's H/T picks (1=H, 2=T) |
-| `alive` | bool | Still in the game? |
-| `score` | u8 | Correct predictions so far |
-| `last_cranked_flip` | u8 | Last flip scored |
-| `died_at_flip` | u8 | Which flip eliminated them (0 = still alive) |
-| `settled` | bool | Winnings paid out? |
+| `winner` | bool | Claimed as 14/14 winner? |
+| `collected` | bool | Jackpot share collected? |
 | `bump` | u8 | Ticket PDA bump |
 
 **RoundResult** (one per completed round)
@@ -310,12 +331,12 @@ const program = new Program(idl, provider);
 // Game state
 const game = await program.account.game.fetch(gamePDA);
 console.log(`Round ${game.round} — Jackpot: $${(Number(game.jackpotPool) / 1e6).toFixed(2)}`);
-console.log(`Entries: ${game.totalEntries}, Alive: ${game.ticketsAlive}`);
+console.log(`Entries: ${game.totalEntries}, Winners: ${game.winnersCount}`);
 console.log(`Flips: ${game.currentFlip}/14`);
 
 // A player's ticket
 const ticket = await program.account.ticket.fetch(ticketPDA);
-console.log(`Alive: ${ticket.alive}, Score: ${ticket.score}/14`);
+console.log(`Winner: ${ticket.winner}, Collected: ${ticket.collected}`);
 
 // Round history
 const result = await program.account.roundResult.fetch(roundResultPDA);
@@ -325,19 +346,19 @@ console.log(`Round ${result.round}: ${result.winners} winners from ${result.tota
 ### Fetch Without Anchor (raw RPC)
 
 ```bash
-# Game state (base64 → decode with IDL layout)
+# Game state (base64 -> decode with IDL layout)
 curl -s https://api.devnet.solana.com -X POST -H "Content-Type: application/json" -d '{
   "jsonrpc": "2.0", "id": 1,
   "method": "getAccountInfo",
   "params": ["AAEwxhqM1EGjTbCyPqSCX7YpyuRqzBBfyf2kJG1nsGqd", {"encoding": "base64"}]
 }'
 
-# All tickets for current round (filter by account size = 93 bytes)
+# All tickets for current round (filter by account size = 90 bytes)
 curl -s https://api.devnet.solana.com -X POST -H "Content-Type: application/json" -d '{
   "jsonrpc": "2.0", "id": 1,
   "method": "getProgramAccounts",
   "params": ["7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX", {
-    "filters": [{"dataSize": 93}],
+    "filters": [{"dataSize": 90}],
     "encoding": "base64"
   }]
 }'
