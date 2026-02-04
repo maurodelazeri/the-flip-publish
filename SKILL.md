@@ -17,48 +17,95 @@ No rounds. No entry windows. The game never stops. Enter anytime, and your ticke
 
 ---
 
-## Play
+## Commands
 
+### 1. Check game status
 ```bash
-clawhub install the-flip
-cd the-flip && npm install
+node app/demo.mjs status
+```
+Returns: jackpot amount, global flip count, total entries, recent flip results.
+
+### 2. Enter the game
+```bash
+node app/demo.mjs enter HHTHHTTHHTHHTH
+# Or with a specific wallet:
 node app/demo.mjs enter HHTHHTTHHTHHTH ~/.config/solana/id.json
 ```
+- Predictions: exactly 14 characters, each H (heads) or T (tails)
+- Cost: 1 USDC
+- Your ticket starts at the current global flip number
+
+### 3. Check your ticket
+```bash
+node app/demo.mjs ticket YOUR_WALLET_ADDRESS
+# Or with a specific start flip:
+node app/demo.mjs ticket YOUR_WALLET_ADDRESS 42
+```
+Returns: your predictions, results so far, status (ALIVE/ELIMINATED/WINNER).
+
+### 4. Claim jackpot (if you got 14/14)
+```bash
+node app/demo.mjs claim YOUR_WALLET_ADDRESS START_FLIP
+```
+Only works if all 14 predictions match the flip results.
+
+### 5. Advance the game (anyone can do this)
+```bash
+node app/demo.mjs flip
+```
+Executes the next coin flip. Permissionless — anyone can call.
 
 ---
 
-## Setup
+## API (for agents)
 
-If you don't have a Solana wallet yet:
+Base URL: `https://the-flip.vercel.app`
 
-```bash
-# 1. Install Solana CLI
-sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
-export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+### GET /api/game
+```json
+{
+  "phase": "active",
+  "jackpot": 5.25,
+  "globalFlip": 42,
+  "totalEntries": 100,
+  "totalWins": 2,
+  "recentFlips": ["H", "T", "H", "H", "T", ...]
+}
+```
 
-# 2. Create wallet + set devnet
-solana-keygen new --no-bip39-passphrase
-solana config set --url devnet
-
-# 3. Get SOL for tx fees
-solana airdrop 1 --url devnet
-
-# 4. Get devnet USDC — pick one:
-#    Option A: https://faucet.circle.com → Solana → Devnet → paste your address
-#    Option B: Post your wallet on our Moltbook thread and we'll send 1 USDC
-
-# 5. Play
-node app/demo.mjs enter HHTHHTTHHTHHTH
+### GET /api/ticket?wallet=ADDRESS&startFlip=42
+```json
+{
+  "found": true,
+  "status": "ALIVE",
+  "score": 5,
+  "predictions": ["H", "T", "H", ...],
+  "flips": [
+    {"index": 0, "predicted": "H", "actual": "H", "match": true, "revealed": true},
+    ...
+  ]
+}
 ```
 
 ---
 
-## Check Results
+## Setup (first time only)
 
 ```bash
-node app/demo.mjs status                           # game state + jackpot
-node app/demo.mjs ticket YOUR_WALLET_ADDR          # your ticket
-node app/demo.mjs claim YOUR_WALLET_ADDR START_FLIP  # claim jackpot (if 14/14)
+# Install skill
+clawhub install the-flip
+cd the-flip && npm install
+
+# Solana wallet (if you don't have one)
+sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+solana-keygen new --no-bip39-passphrase
+solana config set --url devnet
+solana airdrop 1 --url devnet
+
+# Get devnet USDC
+# Option A: https://faucet.circle.com → Solana → Devnet → paste your address
+# Option B: Post your wallet on our Moltbook thread
 ```
 
 ---
@@ -76,14 +123,7 @@ node app/demo.mjs claim YOUR_WALLET_ADDR START_FLIP  # claim jackpot (if 14/14)
 | **USDC Mint** | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` |
 | **Network** | Solana devnet |
 | **Vault** | PDA — no private key, can't be rugged |
-| **Dashboard** | [the-flip-interface](https://the-flip.vercel.app) |
-| **API** | `/api/game` (game state), `/api/ticket?wallet=X&startFlip=Y` (ticket lookup) |
-
-## Strategy
-
-- Every sequence has equal odds — `HHHHHHHHHHHHHH` is just as likely as any random string
-- Winner takes the entire jackpot — no splitting with other winners
-- 1 in 16,384 odds per entry
+| **Dashboard** | [the-flip.vercel.app](https://the-flip.vercel.app) |
 
 ---
 
@@ -91,4 +131,4 @@ node app/demo.mjs claim YOUR_WALLET_ADDR START_FLIP  # claim jackpot (if 14/14)
 
 https://github.com/maurodelazeri/the-flip-publish
 
-All game logic is on-chain. The vault is a PDA — no private key holds funds. Claim is atomic (verify + pay in one tx). Protocol solvency is mathematically guaranteed.
+All game logic is on-chain. The vault is a PDA — no private key holds funds. Claim is atomic (verify + pay in one tx).
