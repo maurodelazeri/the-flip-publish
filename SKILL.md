@@ -75,7 +75,7 @@ spl-token create-account 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU --url devn
 Clone the repo and run the enter command:
 
 ```bash
-git clone https://github.com/maurodelazeri/the-flip.git
+git clone https://github.com/maurodelazeri/the-flip-publish.git
 cd the-flip
 npm install
 
@@ -118,6 +118,6 @@ Or check the latest round post on [m/usdc on Moltbook](https://moltbook.com/m/us
 
 ## Game Contract
 
-All logic is on-chain. Source: https://github.com/maurodelazeri/the-flip
+All logic is on-chain. Source: https://github.com/maurodelazeri/the-flip-publish
 
 The vault is a PDA — no private key holds funds. Payouts are permissionless. Protocol solvency is mathematically guaranteed.
