@@ -149,19 +149,27 @@ node app/demo.mjs status       # check game state
 node app/demo.mjs full-demo    # run complete demo cycle
 ```
 
-### All Commands
+### Play (for players)
+
+```bash
+node app/demo.mjs play HHTHTTHHTHHHTTHHTHHT   # enter the game (checks everything)
+node app/demo.mjs status                       # show game state + jackpot
+node app/demo.mjs ticket <player_pubkey>       # check your ticket
+```
+
+### All Commands (operator)
 
 ```bash
 node app/demo.mjs init                    # initialize game + vault
-node app/demo.mjs enter HHTHTTHHTHHHTTHHTHHT  # enter with predictions
+node app/demo.mjs enter HHTHTTHHTHHHTTHHTHHT  # raw enter (no pre-checks)
+node app/demo.mjs close-entries           # stop accepting new entries
 node app/demo.mjs flip                    # one flip
 node app/demo.mjs flip-all                # all 20 flips in one tx
 node app/demo.mjs crank <player_pubkey>   # evaluate ticket
 node app/demo.mjs settle <player_pubkey>  # pay winnings
-node app/demo.mjs status                  # show game state
-node app/demo.mjs ticket <player_pubkey>  # show ticket
 node app/demo.mjs new-round              # start next round
 node app/demo.mjs withdraw-fees          # withdraw operator fees
+node app/demo.mjs full-demo              # run complete demo cycle
 ```
 
 ---
