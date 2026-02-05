@@ -5,3 +5,9 @@ test-ledger/
 submission-post.json
 *.log
 .DS_Store
+
+# Web UI
+web/.next/
+web/node_modules/
+web/.env*
+web/.vercel
