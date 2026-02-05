@@ -1,20 +1,19 @@
 /**
- * THE FLIP — Continuous Game Demo & Operations Script
+ * THE FLIP — Round-Based Game Demo & Operations Script
  *
- * No rounds. No entry windows. The game never stops.
- * Flips happen continuously on a global counter.
- * Enter anytime, pick 14 H/T predictions, ride the next 14 global flips.
- * Get all 14 right → take the entire jackpot.
+ * Each round flips all 20 coins at once.
+ * Pick 20 H/T predictions, first 14 must match to win the jackpot.
+ * Enter anytime — anyone can join for the next round.
  *
  * Works with deployed program: 7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX
  *
  * Usage:
  *   node app/demo.mjs init                    Initialize game + vault
- *   node app/demo.mjs enter <HHTHTT...>       Enter with 14 H/T predictions
- *   node app/demo.mjs flip                    Execute one coin flip (permissionless)
- *   node app/demo.mjs claim <player> <start>  Claim jackpot (verify 14/14 + pay)
+ *   node app/demo.mjs enter <20 H/T chars>    Enter with 20 H/T predictions
+ *   node app/demo.mjs flip                    Flip all 20 coins for the round (permissionless)
+ *   node app/demo.mjs claim <player> <round>  Claim jackpot (first 14 must match)
  *   node app/demo.mjs status                  Show game state
- *   node app/demo.mjs ticket <player> <start> Show a player's ticket
+ *   node app/demo.mjs ticket <player> <round> Show a player's ticket
  *   node app/demo.mjs withdraw-fees [amount]  Withdraw operator fees
  *   node app/demo.mjs close-game-v1           Close old game PDA for migration
  */
@@ -32,8 +31,10 @@ import path from 'path';
 const DEVNET_URL = 'https://api.devnet.solana.com';
 const USDC_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
 const PROGRAM_ID = new PublicKey('7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX');
-const TOTAL_FLIPS = 14;
-const BUFFER_SIZE = 256;
+const PREDICTIONS_SIZE = 20;   // Players pick 20 H/T predictions
+const SURVIVAL_FLIPS = 14;     // First 14 must match to win
+const ROUNDS_BUFFER = 32;
+const FLIP_COOLDOWN = 43_200;  // 12 hours in seconds
 
 // Load IDL
 const IDL_PATH = path.join(import.meta.dirname, '..', 'target', 'idl', 'the_flip.json');
@@ -58,9 +59,9 @@ function getVaultPDA(authority) {
   );
 }
 
-function getTicketPDA(game, player, startFlip) {
+function getTicketPDA(game, player, round) {
   const buf = Buffer.alloc(4);
-  buf.writeUInt32LE(startFlip);
+  buf.writeUInt32LE(round);
   return PublicKey.findProgramAddressSync(
     [Buffer.from('ticket'), game.toBuffer(), player.toBuffer(), buf],
     PROGRAM_ID
@@ -69,9 +70,9 @@ function getTicketPDA(game, player, startFlip) {
 
 // Parse predictions string (HHTHTT...) to array of u8 (1=H, 2=T)
 function parsePredictions(str) {
-  if (str.length !== 14) throw new Error('Must be exactly 14 predictions (H or T)');
+  if (str.length !== PREDICTIONS_SIZE) throw new Error('Must be exactly ' + PREDICTIONS_SIZE + ' predictions (H or T)');
   const result = [];
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < PREDICTIONS_SIZE; i++) {
     const c = str[i].toUpperCase();
     if (c === 'H') result.push(1);
     else if (c === 'T') result.push(2);
@@ -119,7 +120,7 @@ async function main() {
 
   switch (cmd) {
     case 'init': {
-      console.log('Initializing THE FLIP (continuous game)...');
+      console.log('Initializing THE FLIP (round-based game)...');
       console.log('  Authority:', wallet.publicKey.toBase58());
       console.log('  Game PDA: ', gamePDA.toBase58());
       console.log('  Vault PDA:', vaultPDA.toBase58());
@@ -162,13 +163,12 @@ async function main() {
       const playerProgram = new anchor.Program(idl, playerProvider);
 
       const game = await program.account.game.fetch(gamePDA);
-      const startFlip = game.globalFlip;
-      const [ticketPDA] = getTicketPDA(gamePDA, player.publicKey, startFlip);
+      const round = game.currentRound;
+      const [ticketPDA] = getTicketPDA(gamePDA, player.publicKey, round);
       const playerATA = await getAssociatedTokenAddress(USDC_MINT, player.publicKey);
 
-      console.log('Entering at flip #' + startFlip + ' with player ' + player.publicKey.toBase58());
-      console.log('Predictions: ' + preds.toUpperCase());
-      console.log('Your flips:  #' + startFlip + ' – #' + (startFlip + 13));
+      console.log('Entering for round #' + round + ' with player ' + player.publicKey.toBase58());
+      console.log('Predictions: ' + preds.toUpperCase() + ' (20 total, first 14 must match)');
 
       const tx = await playerProgram.methods.enter(parsed).accounts({
         player: player.publicKey,
@@ -186,34 +186,51 @@ async function main() {
     }
 
     case 'flip': {
-      console.log('Executing next flip...');
+      // Check cooldown before attempting
+      const gameBeforeFlip = await program.account.game.fetch(gamePDA);
+      const now = Math.floor(Date.now() / 1000);
+      const elapsed = now - Number(gameBeforeFlip.lastFlipAt.toString());
+      if (elapsed < FLIP_COOLDOWN) {
+        const remaining = FLIP_COOLDOWN - elapsed;
+        const hours = Math.floor(remaining / 3600);
+        const mins = Math.floor((remaining % 3600) / 60);
+        console.log('Cooldown active — next flip available in ' + hours + 'h ' + mins + 'm');
+        console.log('Last flip: ' + new Date(Number(gameBeforeFlip.lastFlipAt.toString()) * 1000).toISOString());
+        break;
+      }
+
+      console.log('Flipping all 20 coins for current round...');
       const tx = await program.methods.flip().accounts({
         caller: wallet.publicKey,
         game: gamePDA,
       }).rpc();
 
       const game = await program.account.game.fetch(gamePDA);
-      const flipNum = game.globalFlip;
-      const idx = (flipNum - 1) % BUFFER_SIZE;
-      const result = flipToStr(game.flipResults[idx]);
-      console.log('Flip #' + flipNum + ': ' + (result === 'H' ? 'HEADS' : 'TAILS') + '  TX: ' + tx);
+      const roundNum = game.currentRound - 1; // flip increments, so the just-flipped round is currentRound-1
+      const baseIdx = (roundNum % ROUNDS_BUFFER) * PREDICTIONS_SIZE;
+      const results = [];
+      for (let i = 0; i < PREDICTIONS_SIZE; i++) {
+        results.push(flipToStr(game.roundResults[baseIdx + i]));
+      }
+      console.log('Round #' + roundNum + ' flipped! Results: ' + results.join(''));
+      console.log('TX: ' + tx);
       break;
     }
 
     case 'claim': {
       const playerPubkey = process.argv[3];
-      const startFlipArg = process.argv[4];
-      if (!playerPubkey || !startFlipArg) {
-        console.error('Usage: claim <player_pubkey> <start_flip>');
+      const roundArg = process.argv[4];
+      if (!playerPubkey || !roundArg) {
+        console.error('Usage: claim <player_pubkey> <round>');
         process.exit(1);
       }
 
       const player = new PublicKey(playerPubkey);
-      const startFlip = parseInt(startFlipArg);
-      const [ticketPDA] = getTicketPDA(gamePDA, player, startFlip);
+      const round = parseInt(roundArg);
+      const [ticketPDA] = getTicketPDA(gamePDA, player, round);
       const playerATA = await getAssociatedTokenAddress(USDC_MINT, player);
 
-      console.log('Claiming for player ' + playerPubkey + ' starting at flip #' + startFlip + '...');
+      console.log('Claiming for player ' + playerPubkey + ' at round #' + round + '...');
       const tx = await program.methods.claim().accounts({
         claimer: wallet.publicKey,
         game: gamePDA,
@@ -238,12 +255,12 @@ async function main() {
     case 'status': {
       try {
         const game = await program.account.game.fetch(gamePDA);
-        console.log('=== THE FLIP — Continuous Game Status ===');
+        console.log('=== THE FLIP — Round-Based Game Status ===');
         console.log('Program:       ' + PROGRAM_ID.toBase58());
         console.log('Authority:     ' + game.authority.toBase58());
         console.log('Vault:         ' + game.vault.toBase58());
         console.log('');
-        console.log('Global flip:   ' + game.globalFlip);
+        console.log('Current round: ' + game.currentRound);
         console.log('Total entries: ' + game.totalEntries);
         console.log('Total wins:    ' + game.totalWins);
         console.log('');
@@ -251,17 +268,36 @@ async function main() {
         console.log('Operator pool: ' + fmtUsdc(game.operatorPool) + ' USDC');
         console.log('');
 
-        // Show last N flip results from circular buffer
-        const show = Math.min(game.globalFlip, 20);
-        if (show > 0) {
-          const results = [];
-          for (let i = game.globalFlip - show; i < game.globalFlip; i++) {
-            const idx = i % BUFFER_SIZE;
-            results.push('#' + (i + 1) + ':' + flipToStr(game.flipResults[idx]));
-          }
-          console.log('Recent flips:  ' + results.join('  '));
+        // Cooldown status
+        const now = Math.floor(Date.now() / 1000);
+        const lastFlip = Number(game.lastFlipAt.toString());
+        const elapsed = now - lastFlip;
+        if (lastFlip === 0) {
+          console.log('Flip status:   Ready (never flipped)');
+        } else if (elapsed >= FLIP_COOLDOWN) {
+          console.log('Flip status:   Ready (cooldown elapsed)');
+        } else {
+          const remaining = FLIP_COOLDOWN - elapsed;
+          const hours = Math.floor(remaining / 3600);
+          const mins = Math.floor((remaining % 3600) / 60);
+          console.log('Flip status:   Cooldown — ' + hours + 'h ' + mins + 'm remaining');
+          console.log('Last flip:     ' + new Date(lastFlip * 1000).toISOString());
         }
-        console.log('='.repeat(42));
+        console.log('');
+
+        // Show last round's results
+        if (game.currentRound > 0) {
+          const lastRound = game.currentRound - 1;
+          const baseIdx = (lastRound % ROUNDS_BUFFER) * PREDICTIONS_SIZE;
+          const results = [];
+          for (let i = 0; i < PREDICTIONS_SIZE; i++) {
+            results.push(flipToStr(game.roundResults[baseIdx + i]));
+          }
+          console.log('Last round #' + lastRound + ': ' + results.join(''));
+          console.log('  Survival:    ' + results.slice(0, SURVIVAL_FLIPS).join('') + ' (first 14)');
+          console.log('  Extra:       ' + results.slice(SURVIVAL_FLIPS).join('') + ' (15-20)');
+        }
+        console.log('='.repeat(44));
       } catch (e) {
         console.log('Game not initialized. Run: node app/demo.mjs init');
       }
@@ -270,92 +306,94 @@ async function main() {
 
     case 'ticket': {
       const playerPubkey = process.argv[3];
-      const startFlipArg = process.argv[4];
-      if (!playerPubkey) { console.error('Usage: ticket <player_pubkey> [start_flip]'); process.exit(1); }
+      const roundArg = process.argv[4];
+      if (!playerPubkey) { console.error('Usage: ticket <player_pubkey> [round]'); process.exit(1); }
 
       const player = new PublicKey(playerPubkey);
       const game = await program.account.game.fetch(gamePDA);
 
-      // If start_flip not provided, try to find it
-      let startFlip;
-      if (startFlipArg) {
-        startFlip = parseInt(startFlipArg);
+      // If round not provided, try to find it
+      let round;
+      if (roundArg) {
+        round = parseInt(roundArg);
       } else {
-        // Try recent flip numbers (last 20)
         let found = false;
-        for (let sf = game.globalFlip; sf >= Math.max(0, game.globalFlip - 20); sf--) {
+        for (let r = game.currentRound; r >= Math.max(0, game.currentRound - 20); r--) {
           try {
-            const [pda] = getTicketPDA(gamePDA, player, sf);
+            const [pda] = getTicketPDA(gamePDA, player, r);
             await program.account.ticket.fetch(pda);
-            startFlip = sf;
+            round = r;
             found = true;
             break;
           } catch (e) { /* not found, try next */ }
         }
         if (!found) {
-          console.log('No recent ticket found for this player. Try: ticket <player> <start_flip>');
+          console.log('No recent ticket found for this player. Try: ticket <player> <round>');
           break;
         }
       }
 
-      const [ticketPDA] = getTicketPDA(gamePDA, player, startFlip);
+      const [ticketPDA] = getTicketPDA(gamePDA, player, round);
 
       try {
         const ticket = await program.account.ticket.fetch(ticketPDA);
-        const endFlip = ticket.startFlip + TOTAL_FLIPS - 1;
+        const allPredictions = ticket.predictions.map(p => p === 1 ? 'H' : 'T').join('');
+        const survivalPredictions = allPredictions.slice(0, SURVIVAL_FLIPS);
+
         console.log('=== Ticket for ' + player.toBase58() + ' ===');
-        console.log('Start flip:    #' + ticket.startFlip);
-        console.log('End flip:      #' + endFlip);
-        console.log('Predictions:   ' + ticket.predictions.map(p => p === 1 ? 'H' : 'T').join(''));
+        console.log('Round:          #' + ticket.round);
+        console.log('All predictions: ' + allPredictions + ' (20 total)');
+        console.log('Survival check:  ' + survivalPredictions + ' (first 14 must match)');
 
-        // Compare predictions vs results
-        const flipsRevealed = Math.min(TOTAL_FLIPS, Math.max(0, game.globalFlip - ticket.startFlip));
-        let alive = true;
-        let score = 0;
-        let diedAt = null;
-        const comparison = [];
+        const flipped = game.currentRound > ticket.round;
 
-        for (let i = 0; i < TOTAL_FLIPS; i++) {
-          const flipNum = ticket.startFlip + i;
-          const predicted = flipToStr(ticket.predictions[i]);
-          if (flipNum < game.globalFlip) {
-            const idx = flipNum % BUFFER_SIZE;
-            const actual = flipToStr(game.flipResults[idx]);
+        if (!flipped) {
+          console.log('Status:         WAITING (round not yet flipped)');
+        } else {
+          // Get round results
+          const baseIdx = (ticket.round % ROUNDS_BUFFER) * PREDICTIONS_SIZE;
+          const results = [];
+          for (let i = 0; i < PREDICTIONS_SIZE; i++) {
+            results.push(game.roundResults[baseIdx + i]);
+          }
+          const resultsStr = results.map(flipToStr).join('');
+
+          console.log('Round results:  ' + resultsStr);
+
+          // Compare first 14
+          let score = 0;
+          let survived = true;
+          const comparison = [];
+          for (let i = 0; i < PREDICTIONS_SIZE; i++) {
+            const predicted = flipToStr(ticket.predictions[i]);
+            const actual = flipToStr(results[i]);
             const match = predicted === actual;
-            if (alive && match) {
-              score = i + 1;
-            } else if (alive && !match) {
-              alive = false;
-              diedAt = i + 1;
+            if (i < SURVIVAL_FLIPS) {
+              if (match) score++;
+              else survived = false;
             }
-            comparison.push('#' + (flipNum + 1) + ':' + predicted + (match ? '=' : '≠') + actual);
+            comparison.push((i + 1) + ':' + predicted + (match ? '=' : '≠') + actual);
+          }
+
+          if (ticket.winner && ticket.collected) {
+            console.log('Status:         WINNER (collected)');
+          } else if (ticket.winner) {
+            console.log('Status:         WINNER');
+          } else if (survived && score === SURVIVAL_FLIPS) {
+            console.log('Status:         ALL 14 CORRECT — claim available!');
           } else {
-            comparison.push('#' + (flipNum + 1) + ':' + predicted + '/?');
+            console.log('Status:         ELIMINATED (scored ' + score + '/' + SURVIVAL_FLIPS + ')');
+          }
+
+          console.log('');
+          console.log('Comparison (all 20):');
+          // Print 10 per line
+          for (let i = 0; i < comparison.length; i += 10) {
+            console.log('  ' + comparison.slice(i, i + 10).join('  '));
           }
         }
-
-        console.log('Flips:         ' + flipsRevealed + '/' + TOTAL_FLIPS + ' revealed');
-
-        if (ticket.winner && ticket.collected) {
-          console.log('Status:        WINNER (collected)');
-        } else if (ticket.winner) {
-          console.log('Status:        WINNER');
-        } else if (!alive) {
-          console.log('Status:        ELIMINATED at flip ' + diedAt);
-        } else if (flipsRevealed === TOTAL_FLIPS) {
-          console.log('Status:        ALL CORRECT — claim available!');
-        } else {
-          console.log('Status:        ALIVE (' + score + '/' + flipsRevealed + ' correct)');
-        }
-
-        console.log('');
-        console.log('Comparison:');
-        // Print 7 per line
-        for (let i = 0; i < comparison.length; i += 7) {
-          console.log('  ' + comparison.slice(i, i + 7).join('  '));
-        }
       } catch (e) {
-        console.log('No ticket found for this player at start_flip ' + startFlip + '.');
+        console.log('No ticket found for this player at round ' + round + '.');
       }
       break;
     }

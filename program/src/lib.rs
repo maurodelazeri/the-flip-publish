@@ -1,14 +1,17 @@
 use anchor_lang::prelude::*;
+use solana_sha256_hasher::hash;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 declare_id!("7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX");
 
 // Game constants
 const ENTRY_FEE: u64 = 1_000_000; // 1 USDC (6 decimals)
-const TOTAL_FLIPS: u32 = 14;
+const PREDICTIONS_SIZE: usize = 20; // Players pick 20 H/T
+const SURVIVAL_FLIPS: usize = 14; // First 14 must match to win
 const OPERATOR_FEE_BPS: u64 = 100; // 1% to operator
 const BPS_BASE: u64 = 10000;
-const BUFFER_SIZE: usize = 256;
+const ROUNDS_BUFFER: usize = 32; // Store last 32 rounds of results
+const FLIP_COOLDOWN: i64 = 43_200; // 12 hours in seconds
 // Jackpot gets the rest: 99%
 
 #[program]
@@ -23,20 +26,23 @@ pub mod the_flip {
         game.vault = ctx.accounts.vault.key();
         game.bump = ctx.bumps.game;
         game.vault_bump = ctx.bumps.vault;
-        game.global_flip = 0;
-        game.flip_results = [0u8; BUFFER_SIZE];
+        game.current_round = 0;
+        game.round_results = [0u8; ROUNDS_BUFFER * PREDICTIONS_SIZE];
         game.jackpot_pool = 0;
         game.operator_pool = 0;
         game.total_entries = 0;
         game.total_wins = 0;
+        game.last_flip_at = 0;
 
         msg!("THE FLIP initialized. Vault: {}", game.vault);
         Ok(())
     }
 
     /// Player enters the game. Transfers 1 USDC to the vault and creates a ticket PDA.
-    /// Always open — no rounds, no gates.
-    pub fn enter(ctx: Context<Enter>, predictions: [u8; 14]) -> Result<()> {
+    /// Always open — enter anytime, pick 20 predictions.
+    /// When the next flip happens, all 20 coins are flipped at once.
+    /// First 14 of your predictions must match the first 14 results to win.
+    pub fn enter(ctx: Context<Enter>, predictions: [u8; PREDICTIONS_SIZE]) -> Result<()> {
         let game = &mut ctx.accounts.game;
 
         // Validate predictions: each byte must be 1 (H) or 2 (T)
@@ -62,74 +68,87 @@ pub mod the_flip {
         game.jackpot_pool += jackpot_amount;
         game.total_entries += 1;
 
-        // Initialize ticket
+        // Initialize ticket — enters for the NEXT round to be flipped
         let ticket = &mut ctx.accounts.ticket;
         ticket.game = game.key();
         ticket.player = ctx.accounts.player.key();
-        ticket.start_flip = game.global_flip;
+        ticket.round = game.current_round;
         ticket.predictions = predictions;
         ticket.winner = false;
         ticket.collected = false;
         ticket.bump = ctx.bumps.ticket;
 
         msg!(
-            "Player {} entered at flip #{}. Total entries: {}",
+            "Player {} entered for round #{}. Total entries: {}",
             ctx.accounts.player.key(),
-            game.global_flip,
+            game.current_round,
             game.total_entries
         );
         Ok(())
     }
 
-    /// Execute the next global flip. Permissionless — anyone can call.
+    /// Flip all 20 coins at once for the current round. Permissionless — anyone can call.
+    /// Generates 20 H/T results using on-chain entropy and increments the round counter.
     pub fn flip(ctx: Context<FlipCtx>) -> Result<()> {
         let game = &mut ctx.accounts.game;
-
-        let idx = game.global_flip as usize % BUFFER_SIZE;
-
-        // Randomness from slot + timestamp + game key + global flip number
         let clock = Clock::get()?;
-        let mut seed: u8 = (game.global_flip & 0xFF) as u8;
-        for b in clock.slot.to_le_bytes() { seed ^= b; }
-        for b in clock.unix_timestamp.to_le_bytes() { seed ^= b; }
-        for b in game.key().to_bytes() { seed ^= b; }
 
-        // Even = H (1), Odd = T (2)
-        let result: u8 = if seed % 2 == 0 { 1 } else { 2 };
+        // Enforce 12-hour cooldown between flips
+        require!(
+            clock.unix_timestamp - game.last_flip_at >= FLIP_COOLDOWN,
+            FlipError::FlipCooldown
+        );
 
-        game.flip_results[idx] = result;
-        game.global_flip += 1;
+        // Build entropy from multiple sources
+        let mut seed_data = [0u8; 52];
+        seed_data[0..4].copy_from_slice(&game.current_round.to_le_bytes());
+        seed_data[4..12].copy_from_slice(&clock.slot.to_le_bytes());
+        seed_data[12..20].copy_from_slice(&clock.unix_timestamp.to_le_bytes());
+        seed_data[20..52].copy_from_slice(game.key().as_ref());
 
-        let result_str = if result == 1 { "HEADS" } else { "TAILS" };
-        msg!("Flip #{}: {}", game.global_flip, result_str);
+        let hash_result = hash(&seed_data);
+        let hash_bytes = hash_result.to_bytes(); // 32 bytes = 256 bits
 
+        // Store 20 results for this round (use 20 bits from the hash)
+        let base_idx = (game.current_round as usize % ROUNDS_BUFFER) * PREDICTIONS_SIZE;
+        for i in 0..PREDICTIONS_SIZE {
+            let byte_idx = i / 8;
+            let bit_idx = i % 8;
+            let bit = (hash_bytes[byte_idx] >> bit_idx) & 1;
+            game.round_results[base_idx + i] = if bit == 0 { 1 } else { 2 };
+        }
+
+        game.last_flip_at = clock.unix_timestamp;
+        game.current_round += 1;
+
+        msg!("Round #{} flipped! 20 coins revealed.", game.current_round);
         Ok(())
     }
 
-    /// Verify 14/14 predictions match and pay the entire jackpot. Permissionless.
+    /// Verify first 14 predictions match the round results and pay the entire jackpot.
     pub fn claim(ctx: Context<Claim>) -> Result<()> {
         let game = &mut ctx.accounts.game;
         let ticket = &mut ctx.accounts.ticket;
 
-        // All 14 flips must be revealed
+        // Round must have been flipped
         require!(
-            game.global_flip >= ticket.start_flip + TOTAL_FLIPS,
-            FlipError::FlipsNotRevealed
+            game.current_round > ticket.round,
+            FlipError::RoundNotFlipped
         );
 
-        // Must be within circular buffer window (256 flips)
+        // Must be within buffer window (last 32 rounds)
         require!(
-            game.global_flip - ticket.start_flip <= BUFFER_SIZE as u32,
+            game.current_round - ticket.round <= ROUNDS_BUFFER as u32,
             FlipError::BufferExpired
         );
 
         require!(!ticket.collected, FlipError::AlreadyCollected);
 
-        // Verify all 14 predictions match flip results
-        for i in 0..TOTAL_FLIPS {
-            let idx = (ticket.start_flip + i) as usize % BUFFER_SIZE;
+        // Verify first 14 predictions match round results
+        let base_idx = (ticket.round as usize % ROUNDS_BUFFER) * PREDICTIONS_SIZE;
+        for i in 0..SURVIVAL_FLIPS {
             require!(
-                ticket.predictions[i as usize] == game.flip_results[idx],
+                ticket.predictions[i] == game.round_results[base_idx + i],
                 FlipError::NotAWinner
             );
         }
@@ -164,9 +183,10 @@ pub mod the_flip {
         game.jackpot_pool = 0;
 
         msg!(
-            "WINNER! {} claimed {} USDC (win #{})",
+            "WINNER! {} claimed {} USDC at round #{} (win #{})",
             ticket.player,
             payout,
+            ticket.round,
             game.total_wins
         );
         Ok(())
@@ -266,13 +286,13 @@ pub struct Enter<'info> {
         seeds = [b"game", game.authority.as_ref()],
         bump = game.bump,
     )]
-    pub game: Account<'info, Game>,
+    pub game: Box<Account<'info, Game>>,
 
     #[account(
         init,
         payer = player,
         space = 8 + Ticket::INIT_SPACE,
-        seeds = [b"ticket", game.key().as_ref(), player.key().as_ref(), &game.global_flip.to_le_bytes()],
+        seeds = [b"ticket", game.key().as_ref(), player.key().as_ref(), &game.current_round.to_le_bytes()],
         bump,
     )]
     pub ticket: Account<'info, Ticket>,
@@ -294,7 +314,7 @@ pub struct Enter<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-/// Permissionless — anyone can execute the next flip.
+/// Permissionless — anyone can execute the next round's flip.
 #[derive(Accounts)]
 pub struct FlipCtx<'info> {
     pub caller: Signer<'info>,
@@ -316,7 +336,7 @@ pub struct Claim<'info> {
         seeds = [b"game", game.authority.as_ref()],
         bump = game.bump,
     )]
-    pub game: Account<'info, Game>,
+    pub game: Box<Account<'info, Game>>,
 
     #[account(
         mut,
@@ -398,12 +418,13 @@ pub struct Game {
     pub vault: Pubkey,               // 32
     pub bump: u8,                    // 1
     pub vault_bump: u8,              // 1
-    pub global_flip: u32,            // 4  — total flips ever executed
-    pub flip_results: [u8; 256],     // 256 — circular buffer (index = global_flip % 256)
+    pub current_round: u32,          // 4  — rounds completed (each round = 20 flips at once)
+    pub round_results: [u8; 640],    // 640 — 32 rounds × 20 results (circular buffer)
     pub jackpot_pool: u64,           // 8
     pub operator_pool: u64,          // 8
     pub total_entries: u32,          // 4
     pub total_wins: u32,             // 4  — lifetime winners
+    pub last_flip_at: i64,           // 8  — unix timestamp of last flip (12h cooldown)
 }
 
 #[account]
@@ -411,8 +432,8 @@ pub struct Game {
 pub struct Ticket {
     pub game: Pubkey,                // 32
     pub player: Pubkey,              // 32
-    pub start_flip: u32,             // 4  — which global flip this ticket starts at
-    pub predictions: [u8; 14],       // 14
+    pub round: u32,                  // 4  — which round this ticket is for
+    pub predictions: [u8; 20],       // 20 — player picks 20 H/T, first 14 must match to survive
     pub winner: bool,                // 1
     pub collected: bool,             // 1
     pub bump: u8,                    // 1
@@ -424,7 +445,7 @@ pub struct Ticket {
 pub enum FlipError {
     #[msg("Invalid prediction: must be 1 (H) or 2 (T)")]
     InvalidPrediction,
-    #[msg("Not a 14/14 winner")]
+    #[msg("Did not survive 14 flips")]
     NotAWinner,
     #[msg("Already collected payout")]
     AlreadyCollected,
@@ -436,8 +457,10 @@ pub enum FlipError {
     PlayerMismatch,
     #[msg("Insufficient operator fees")]
     InsufficientFees,
-    #[msg("Not all 14 flips have been revealed yet")]
-    FlipsNotRevealed,
-    #[msg("Ticket expired — circular buffer overwritten (claim within 256 flips)")]
+    #[msg("Round has not been flipped yet")]
+    RoundNotFlipped,
+    #[msg("Ticket expired — results overwritten (claim within 32 rounds)")]
     BufferExpired,
+    #[msg("Flip cooldown — wait 12 hours between rounds")]
+    FlipCooldown,
 }

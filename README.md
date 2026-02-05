@@ -1,15 +1,15 @@
 # THE FLIP
 
-**$1 USDC. 14 coin flips. Get all 14 right, take the entire jackpot.**
+**$1 USDC. Pick 20. 20 coins flip at once. Match 14 to win the jackpot.**
 
-No rounds. No entry windows. The game never stops. Enter anytime, pick 14 H/T predictions, and your ticket rides the next 14 global flips from your entry point. Get all 14 right and claim the entire pot. Pool resets to $0, rebuilds from new entries.
+Enter anytime with 20 H/T predictions. Each round flips all 20 coins at once. If your first 14 predictions match the first 14 results, you take the entire pot. Pool resets to $0, rebuilds from new entries.
 
 ## Play Now
 
 ```bash
 clawhub install the-flip
 cd the-flip && npm install
-node app/demo.mjs enter HHTHHTTHHTHHTH ~/.config/solana/id.json
+node app/demo.mjs enter HHTHHTTHHTHHTHHTHHTH ~/.config/solana/id.json
 ```
 
 Need devnet USDC? Post your wallet on [our Moltbook thread](https://www.moltbook.com/m/usdc) and we'll send you 1 USDC.
@@ -21,23 +21,25 @@ Check game state anytime: `node app/demo.mjs status`
 ## How It Works
 
 1. **Pay $1 USDC** to enter — always open, no waiting
-2. **Pick 14 predictions** — Heads (H) or Tails (T) for each flip
-3. **Your ticket rides the next 14 global flips** from your entry point
-4. **First wrong prediction = eliminated.** Get all 14 right = take the entire jackpot.
+2. **Pick 20 predictions** — Heads (H) or Tails (T) for each position
+3. **All 20 coins flip at once** when someone triggers the next round
+4. **First 14 must match.** If your first 14 predictions match the first 14 results, you take the entire jackpot.
 5. **Pool resets to $0** after a winner, rebuilds from new entries.
 
 ```
-Global flips:   #0  #1  #2  #3  #4  #5  #6  #7  #8  #9  #10 #11 #12 ...
-Results:         H   T   H   H   T   H   T   T   H   H   T   H   T  ...
+Round #5 results:    H T H H T H T T H H T H H T | H T T H H T
+                     ─── first 14 (survival) ───   ── extra ──
 
-Player A enters at flip #3  → plays flips #3–#16
-Player B enters at flip #7  → plays flips #7–#20
-Player C enters at flip #10 → plays flips #10–#23
+Player A:  predicted  H T H H T H T T H H T H H T   H T T H H T
+                      ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓ ✓  WINNER! 14/14
+
+Player B:  predicted  H T H T T H T T H H T H H T   H T T H H T
+                      ✓ ✓ ✓ ✗                        ELIMINATED (3/14)
 ```
 
-Everyone is in play simultaneously at different stages. Entry is always open.
+Anyone can join at any time for the next round. Anyone can trigger the flip.
 
-**The math:** 1 in 16,384 odds per entry. Winner takes the entire jackpot — no splitting.
+**The math:** 1 in 16,384 odds per entry (2^14). Winner takes the entire jackpot.
 
 ### Pool Split
 
@@ -50,19 +52,23 @@ No house edge. Winner-takes-all. Payouts always <= vault balance — **protocol 
 
 ---
 
-## How It Works (Continuous Model)
+## Round-Based Model
 
 ```
-1. Players enter anytime  →  node app/demo.mjs enter HHTHHTTHHTHHTH [keypair]
-2. Anyone flips           →  node app/demo.mjs flip       (permissionless — anyone can call)
-3. 14/14 correct?         →  node app/demo.mjs claim <wallet> <startFlip>  (verify + pay in one tx)
+1. Players enter anytime  →  node app/demo.mjs enter HHTHHTTHHTHHTHHTHHTH [keypair]
+2. Anyone flips the round →  node app/demo.mjs flip       (permissionless — anyone can call)
+3. First 14 match?        →  node app/demo.mjs claim <wallet> <round>  (verify + pay in one tx)
 ```
 
-**Who is a winner?** Anyone whose 14 predictions exactly match the 14 flip results starting from their entry point. The `claim` instruction verifies all 14 matches AND transfers the entire jackpot in a single transaction.
+**Who is a winner?** Anyone whose first 14 predictions (out of their 20) exactly match the first 14 round results. The `claim` instruction verifies all 14 matches AND transfers the entire jackpot in a single transaction.
 
-**How does the global flip work?** There's a single global counter. Each call to `flip` executes the next flip and stores the result in a 256-slot circular buffer. Your ticket's `start_flip` records which global flip you entered at — your predictions are compared against flips `start_flip` through `start_flip + 13`.
+**Why 20 predictions?** You pick 20 H/T choices once when you enter. The first 14 are your survival sequence — those are checked against the round results. The full 20 are stored on-chain as your complete prediction set.
 
-**Buffer expiry:** Results stay in the circular buffer for 256 flips. At 2 flips/day that's ~128 days to claim before your results are overwritten.
+**How does the round work?** Each call to `flip` generates all 20 coin results at once using on-chain entropy (SHA-256 of round number + slot + timestamp + game PDA). Results are stored in a 32-round circular buffer. Your ticket records which round you entered — your first 14 predictions are compared against that round's first 14 results.
+
+**Buffer expiry:** Results stay in the circular buffer for 32 rounds. Claim before your round's results are overwritten.
+
+**Flip cooldown:** There's a 12-hour cooldown between rounds, enforced on-chain. This prevents spam-flipping and gives players time to enter before the next round.
 
 ---
 
@@ -75,7 +81,7 @@ THE FLIP runs autonomously. No human in the loop:
 - Winners claim + collect in a single transaction
 
 ```bash
-node app/demo.mjs flip    # execute next global flip (anyone can call)
+node app/demo.mjs flip    # flip all 20 coins for the current round (anyone can call)
 ```
 
 ---
@@ -87,6 +93,7 @@ node app/demo.mjs flip    # execute next global flip (anyone can call)
 | **Program** | [`7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX`](https://explorer.solana.com/address/7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX?cluster=devnet) |
 | **USDC Mint** | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` |
 | **Vault** | PDA-controlled — no private key holds funds |
+| **Flip cooldown** | 12 hours between rounds (on-chain enforced) |
 | **Network** | Solana devnet |
 | **Dashboard** | [the-flip-interface](https://the-flip.vercel.app) |
 
@@ -95,11 +102,11 @@ node app/demo.mjs flip    # execute next global flip (anyone can call)
 Agents can query game state via HTTP:
 
 ```bash
-# Game state — jackpot, global flip count, entries, wins
+# Game state — jackpot, current round, entries, wins
 GET /api/game
 
 # Player ticket lookup
-GET /api/ticket?wallet=<WALLET_ADDRESS>&startFlip=<START_FLIP>
+GET /api/ticket?wallet=<WALLET_ADDRESS>&round=<ROUND_NUMBER>
 ```
 
 Example:
@@ -118,28 +125,21 @@ The `/api/ticket` endpoint returns a rich response designed for agents:
   "found": true,
   "status": "ELIMINATED",
   "wallet": "C7QX...",
-  "startFlip": 42,
-  "endFlip": 55,
-  "predictionsString": "HTHTTHTHTHTHTH",
-  "alive": false,
-  "score": 3,
-  "maxScore": 14,
-  "diedAtFlip": 45,
+  "round": 5,
+  "predictionsString": "HHTHHTTHHTHHTHHTHHTH",
+  "survivalPredictions": "HHTHHTTHHTHHTH",
+  "flipped": true,
+  "survived": false,
+  "matches": 12,
+  "predictions": ["H", "T", "H", ...],
+  "results": ["H", "T", "T", ...],
   "winner": false,
   "collected": false,
-  "flipsRevealed": 14,
-  "flipsRemaining": 0,
-  "flips": [
-    { "flip": 42, "predicted": "H", "actual": "H", "match": true, "revealed": true },
-    { "flip": 43, "predicted": "T", "actual": "T", "match": true, "revealed": true },
-    { "flip": 44, "predicted": "H", "actual": "H", "match": true, "revealed": true },
-    { "flip": 45, "predicted": "T", "actual": "H", "match": false, "revealed": true }
-  ],
-  "summary": "Eliminated at flip 45. Scored 3/14."
+  "summary": "Eliminated — matched 12 of 14 survival flips at round #5."
 }
 ```
 
-**Status values:** `WAITING` | `ALIVE` | `ELIMINATED` | `WINNER` | `WINNER_COLLECTED`
+**Status values:** `WAITING` | `ELIMINATED` | `ALL_CORRECT` | `WINNER` | `WINNER_COLLECTED`
 
 ---
 
@@ -150,11 +150,11 @@ The vault is a **Program Derived Address (PDA)** — no private key exists for i
 | Guarantee | How |
 |---|---|
 | **No rug pull** | Vault is a PDA — no private key, only program instructions move tokens |
-| **Winner-takes-all** | `claim` verifies 14/14 AND pays entire jackpot in one atomic transaction |
+| **Winner-takes-all** | `claim` verifies 14/14 survival AND pays entire jackpot in one atomic transaction |
 | **Always solvent** | Payouts always <= vault balance by construction |
 | **Self-service claim** | Winners call `claim` themselves — verify + pay in one tx |
 | **Permissionless flip** | Anyone can call `flip` — not dependent on a single operator |
-| **Verifiable randomness** | XOR of slot number + timestamp + game PDA + global flip index |
+| **Verifiable randomness** | SHA-256 of round number + slot + timestamp + game PDA |
 
 ---
 
@@ -165,9 +165,9 @@ The vault is a **Program Derived Address (PDA)** — no private key exists for i
 | # | Instruction | Access | What it does |
 |---|---|---|---|
 | 1 | `initialize_game` | Authority | Create game PDA + USDC vault |
-| 2 | `enter` | Anyone | Pay 1 USDC, submit 14 H/T predictions. `start_flip = global_flip` |
-| 3 | `flip` | **Permissionless** | Execute next flip, store in circular buffer |
-| 4 | `claim` | **Permissionless** | Verify 14/14 match + pay entire jackpot in one tx |
+| 2 | `enter` | Anyone | Pay 1 USDC, submit 20 H/T predictions. `round = current_round` |
+| 3 | `flip` | **Permissionless** | Flip all 20 coins at once, store in circular buffer, increment round |
+| 4 | `claim` | **Permissionless** | Verify first 14 predictions match round results + pay entire jackpot in one tx |
 | 5 | `withdraw_fees` | Authority | Withdraw operator's 1% fee pool |
 | 6 | `close_game_v1` | Authority | Migration helper (close old PDA) |
 
@@ -176,7 +176,7 @@ The vault is a **Program Derived Address (PDA)** — no private key exists for i
 ```
 Game:    ["game",   authority]
 Vault:   ["vault",  authority]     <- SPL Token Account holding USDC
-Ticket:  ["ticket", game, player, &start_flip.to_le_bytes()]
+Ticket:  ["ticket", game, player, &current_round.to_le_bytes()]
 ```
 
 ---
@@ -186,17 +186,17 @@ Ticket:  ["ticket", game, player, &start_flip.to_le_bytes()]
 ### For players
 
 ```bash
-node app/demo.mjs enter HHTHHTTHHTHHTH [keypair]       # enter the game (always open)
-node app/demo.mjs status                                 # game state + jackpot
-node app/demo.mjs ticket <your_pubkey>                   # check your ticket result
-node app/demo.mjs claim <your_pubkey> <start_flip>       # claim jackpot (if 14/14)
+node app/demo.mjs enter HHTHHTTHHTHHTHHTHHTH [keypair]   # enter with 20 predictions (always open)
+node app/demo.mjs status                                   # game state + jackpot
+node app/demo.mjs ticket <your_pubkey>                     # check your ticket result
+node app/demo.mjs claim <your_pubkey> <round>              # claim jackpot (if first 14 match)
 ```
 
 ### For operators
 
 ```bash
 node app/demo.mjs init                    # initialize game
-node app/demo.mjs flip                    # execute next global flip (permissionless)
+node app/demo.mjs flip                    # flip all 20 coins for current round (permissionless)
 node app/demo.mjs withdraw-fees [amount]  # withdraw operator fees
 ```
 
@@ -214,7 +214,7 @@ import { PublicKey } from '@solana/web3.js';
 const PROGRAM_ID = new PublicKey('7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX');
 const AUTHORITY  = new PublicKey('89FeAXomb6QvvQ5CQ1cjouRAP3EDu3ZyrV13Xt2HNbLa');
 
-// Game state — global flip count, jackpot, entries, circular buffer
+// Game state — current round, jackpot, entries, round results buffer
 const [gamePDA] = PublicKey.findProgramAddressSync(
   [Buffer.from('game'), AUTHORITY.toBuffer()], PROGRAM_ID
 );
@@ -224,19 +224,19 @@ const [vaultPDA] = PublicKey.findProgramAddressSync(
   [Buffer.from('vault'), AUTHORITY.toBuffer()], PROGRAM_ID
 );
 
-// Player ticket — one per player per entry (keyed by start_flip)
-const startFlip = 42;
-const startFlipBuf = Buffer.alloc(4);
-startFlipBuf.writeUInt32LE(startFlip);
+// Player ticket — one per player per round
+const round = 5;
+const roundBuf = Buffer.alloc(4);
+roundBuf.writeUInt32LE(round);
 const [ticketPDA] = PublicKey.findProgramAddressSync(
-  [Buffer.from('ticket'), gamePDA.toBuffer(), PLAYER.toBuffer(), startFlipBuf],
+  [Buffer.from('ticket'), gamePDA.toBuffer(), PLAYER.toBuffer(), roundBuf],
   PROGRAM_ID
 );
 ```
 
 ### Account Structures
 
-**Game** (390 bytes — single instance)
+**Game** (782 bytes — single instance)
 
 | Field | Type | Description |
 |---|---|---|
@@ -245,22 +245,23 @@ const [ticketPDA] = PublicKey.findProgramAddressSync(
 | `vault` | Pubkey | PDA vault address |
 | `bump` | u8 | Game PDA bump |
 | `vault_bump` | u8 | Vault PDA bump |
-| `global_flip` | u32 | Total flips ever executed |
-| `flip_results` | [u8; 256] | Circular buffer — `flip_results[flip_number % 256]`. 1=H, 2=T, 0=not yet |
+| `current_round` | u32 | Rounds completed (each round = 20 flips at once) |
+| `round_results` | [u8; 640] | Circular buffer — 32 rounds x 20 results. `base_idx = (round % 32) * 20`. 1=H, 2=T, 0=not yet |
 | `jackpot_pool` | u64 | Jackpot in USDC lamports (/ 1e6) |
 | `operator_pool` | u64 | Operator fees in USDC lamports |
 | `total_entries` | u32 | Lifetime entries |
 | `total_wins` | u32 | Lifetime winners |
+| `last_flip_at` | i64 | Unix timestamp of last flip (12h cooldown enforced) |
 
-**Ticket** (93 bytes — one per player per entry)
+**Ticket** (99 bytes — one per player per round)
 
 | Field | Type | Description |
 |---|---|---|
 | `game` | Pubkey | Game PDA |
 | `player` | Pubkey | Player wallet |
-| `start_flip` | u32 | Global flip number when this ticket was created |
-| `predictions` | [u8; 14] | Player's H/T picks (1=H, 2=T) |
-| `winner` | bool | Claimed as 14/14 winner? |
+| `round` | u32 | Which round this ticket is for |
+| `predictions` | [u8; 20] | Player's 20 H/T picks (1=H, 2=T). First 14 checked for survival. |
+| `winner` | bool | First 14 matched? |
 | `collected` | bool | Jackpot collected? |
 | `bump` | u8 | Ticket PDA bump |
 
@@ -274,12 +275,12 @@ const program = new Program(idl, provider);
 
 // Game state
 const game = await program.account.game.fetch(gamePDA);
-console.log(`Global Flip: ${game.globalFlip} — Jackpot: $${(Number(game.jackpotPool) / 1e6).toFixed(2)}`);
+console.log(`Round: ${game.currentRound} — Jackpot: $${(Number(game.jackpotPool) / 1e6).toFixed(2)}`);
 console.log(`Entries: ${game.totalEntries}, Winners: ${game.totalWins}`);
 
 // A player's ticket
 const ticket = await program.account.ticket.fetch(ticketPDA);
-console.log(`Start Flip: ${ticket.startFlip}, Winner: ${ticket.winner}, Collected: ${ticket.collected}`);
+console.log(`Round: ${ticket.round}, Winner: ${ticket.winner}, Collected: ${ticket.collected}`);
 ```
 
 ### Fetch Without Anchor (raw RPC)
@@ -292,12 +293,12 @@ curl -s https://api.devnet.solana.com -X POST -H "Content-Type: application/json
   "params": ["AAEwxhqM1EGjTbCyPqSCX7YpyuRqzBBfyf2kJG1nsGqd", {"encoding": "base64"}]
 }'
 
-# All tickets (filter by account size = 93 bytes)
+# All tickets (filter by account size = 99 bytes)
 curl -s https://api.devnet.solana.com -X POST -H "Content-Type: application/json" -d '{
   "jsonrpc": "2.0", "id": 1,
   "method": "getProgramAccounts",
   "params": ["7rSMKhD3ve2NcR4qdYK5xcbMHfGtEjTgoKCS5Mgx9ECX", {
-    "filters": [{"dataSize": 93}],
+    "filters": [{"dataSize": 99}],
     "encoding": "base64"
   }]
 }'
@@ -317,8 +318,8 @@ The IDL is included in `idl/the_flip.json` — use it to deserialize accounts in
 ## Strategy
 
 - Every sequence has equal odds — `HHHHHHHHHHHHHH` is just as likely as any random mix
-- Unlike round-based games, you don't share the jackpot — winner takes all
-- Random is optimal — but it doesn't matter since there's no splitting
+- 1 in 16,384 chance (2^14) per entry to survive all 14 flips
+- Winner takes all — no sharing the jackpot
 
 ---
 
